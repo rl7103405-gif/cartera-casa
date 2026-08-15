@@ -14,7 +14,7 @@ rules_version = '2';
 //    Roberto  rl7103405@gmail.com  -> cartera/*  + gastos, ingresos,
 //                                     transferencias, stocksOps
 //    Zoe      zoe.frei@outlook.de  -> zoe/*      + zoe_*
-//    La Casa  casa@lacasa.app      -> casa/*     + casa_*
+//    La Casa  rl7103405+casa@gmail.com      -> casa/*     + casa_*
 //                                     (cuenta compartida por 3 hermanos)
 //
 //  NOTAS IMPORTANTES DE MANTENIMIENTO:
@@ -33,9 +33,11 @@ rules_version = '2';
 //     ACOTADO a esa coleccion: cubre el documento y cualquier
 //     subcoleccion futura sin abrir nada de las otras carteras.
 //
-//  4. NO se exige email_verified a proposito: casa@lacasa.app es un
-//     dominio inventado y su correo no esta verificado. Exigirlo dejaria
-//     a los hermanos fuera de su propia app.
+//  4. NO se exige email_verified a proposito: la cuenta de la casa se crea
+//     a mano en la consola de Firebase y nunca pasa por verificacion.
+//     Exigirlo dejaria a los tres hermanos fuera de su propia app.
+//     El correo es un alias (+casa) del Gmail de Roberto, o sea que el
+//     dominio lo controla el; NO usar dominios ajenos aqui.
 //
 //  5. Las colecciones de Roberto no llevan prefijo (gastos, ingresos,
 //     transferencias, stocksOps). Si algun dia se agrega una CUARTA app,
@@ -63,7 +65,7 @@ service cloud.firestore {
 
     function esCasa() {
       return request.auth != null
-        && request.auth.token.email == 'casa@lacasa.app';
+        && request.auth.token.email == 'rl7103405+casa@gmail.com';
     }
 
 
@@ -146,7 +148,7 @@ service cloud.firestore {
     // Reservadas: la app de la casa TODAVIA no las usa (hoy las deudas
     // viven en el documento casa/personas). Se dejan abiertas por
     // adelantado para que, si se agregan, no haya que tocar reglas ni
-    // redeployar. No afectan el aislamiento: solo casa@lacasa.app entra.
+    // redeployar. No afectan el aislamiento: solo rl7103405+casa@gmail.com entra.
     match /casa_personas/{documento=**} {
       allow read, write: if esCasa();
     }

@@ -805,7 +805,12 @@ const app = initializeApp(firebaseConfig, NS);
 const db = getFirestore(app);
 const auth = getAuth(app);
 
-const ALLOWED_EMAIL = 'casa@lacasa.app'; // el correo con el que entras a esta copia
+// Correo real de la cuenta compartida. Es un alias del Gmail de Roberto (+casa): lo
+// controla el, asi que nadie mas puede pedir un restablecimiento de contrasena.
+// OJO: NO usar un dominio ajeno (el anterior, lacasa.app, resulto ser de un tercero
+// con correo activo: quien lo controle podria haber tomado la cuenta).
+// En la pantalla de login los tres escriben solo "casa"; la app traduce a este correo.
+const ALLOWED_EMAIL = 'rl7103405+casa@gmail.com';
 // La meta de ahorro de la casa YA NO se quema aqui: vive en el documento casa/metas, se
 // carga en loadFromFirebase y se edita desde la pestana metas (state.meta / editarMeta).
 // Esta constante es solo la fecha que se propone la primera vez.
