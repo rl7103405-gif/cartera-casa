@@ -1,0 +1,174 @@
+rules_version = '2';
+
+// =====================================================================
+//  mi-cartera-b43e0 — UN solo ruleset para TRES apps
+// =====================================================================
+//
+//  Firestore admite un unico ruleset por base de datos, y las tres apps
+//  (Mi Cartera de Roberto, Cartera de Zoe, Cartera de la Casa) comparten
+//  el mismo proyecto Firebase. El aislamiento entre ellas se logra
+//  namespaceando las colecciones y dando acceso a cada correo SOLO a las
+//  suyas.
+//
+//  Reparto de namespaces:
+//    Roberto  rl7103405@gmail.com  -> cartera/*  + gastos, ingresos,
+//                                     transferencias, stocksOps
+//    Zoe      zoe.frei@outlook.de  -> zoe/*      + zoe_*
+//    La Casa  casa@lacasa.app      -> casa/*     + casa_*
+//                                     (cuenta compartida por 3 hermanos)
+//
+//  NOTAS IMPORTANTES DE MANTENIMIENTO:
+//
+//  1. Firestore NO soporta comodines de prefijo en el nombre de la
+//     coleccion: NO existe match /zoe_*/{doc}. Por eso cada coleccion va
+//     enumerada a mano. Si una app empieza a usar una coleccion nueva,
+//     HAY QUE AGREGARLA AQUI o esa parte de la app dejara de funcionar.
+//
+//  2. Las reglas se combinan con OR: basta que UNA regla permita para que
+//     la operacion pase. Por eso aqui NO hay ningun catch-all permisivo
+//     (el viejo `match /{document=**} { allow read, write: if ... }`
+//     anulaba cualquier restriccion y quedo eliminado).
+//
+//  3. {documento=**} dentro de cada bloque es un comodin recursivo pero
+//     ACOTADO a esa coleccion: cubre el documento y cualquier
+//     subcoleccion futura sin abrir nada de las otras carteras.
+//
+//  4. NO se exige email_verified a proposito: casa@lacasa.app es un
+//     dominio inventado y su correo no esta verificado. Exigirlo dejaria
+//     a los hermanos fuera de su propia app.
+//
+//  5. Las colecciones de Roberto no llevan prefijo (gastos, ingresos,
+//     transferencias, stocksOps). Si algun dia se agrega una CUARTA app,
+//     sus colecciones deben ir prefijadas; nunca reutilizar esos nombres
+//     genericos.
+// =====================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------------------------------------------------------------
+    //  Identidad — un correo exacto por app.
+    //  request.auth != null bloquea anonimos y no autenticados.
+    //  La comparacion exacta bloquea cualquier otro correo del proyecto.
+    // ---------------------------------------------------------------
+    function esRoberto() {
+      return request.auth != null
+        && request.auth.token.email == 'rl7103405@gmail.com';
+    }
+
+    function esZoe() {
+      return request.auth != null
+        && request.auth.token.email == 'zoe.frei@outlook.de';
+    }
+
+    function esCasa() {
+      return request.auth != null
+        && request.auth.token.email == 'casa@lacasa.app';
+    }
+
+
+    // ===============================================================
+    //  ROBERTO — mi-cartera
+    // ===============================================================
+
+    // Documentos de configuracion y estado:
+    // saldos, mercado, personas, perfil, tarjeta, tarjetaRev,
+    // historial, apartados, categorias, posiciones
+    match /cartera/{documento=**} {
+      allow read, write: if esRoberto();
+    }
+
+    // Colecciones de movimientos (sin prefijo, historicas)
+    match /gastos/{documento=**} {
+      allow read, write: if esRoberto();
+    }
+    match /ingresos/{documento=**} {
+      allow read, write: if esRoberto();
+    }
+    match /transferencias/{documento=**} {
+      allow read, write: if esRoberto();
+    }
+    match /stocksOps/{documento=**} {
+      allow read, write: if esRoberto();
+    }
+
+
+    // ===============================================================
+    //  ZOE — mi-cartera-zoe   (NS = 'zoe', PFX = 'zoe_')
+    // ===============================================================
+
+    // Documentos: saldos, mercado, personas, perfil, tarjeta,
+    // tarjetaRev, historial, apartados, categorias, posiciones
+    match /zoe/{documento=**} {
+      allow read, write: if esZoe();
+    }
+
+    match /zoe_gastos/{documento=**} {
+      allow read, write: if esZoe();
+    }
+    match /zoe_ingresos/{documento=**} {
+      allow read, write: if esZoe();
+    }
+    match /zoe_transferencias/{documento=**} {
+      allow read, write: if esZoe();
+    }
+    match /zoe_stocksOps/{documento=**} {
+      allow read, write: if esZoe();
+    }
+
+
+    // ===============================================================
+    //  LA CASA — cartera-casa   (NS = 'casa', PFX = 'casa_')
+    //  Cuenta unica compartida por los 3 hermanos.
+    // ===============================================================
+
+    // Documentos que la app usa hoy: saldos, personas, perfil, metas,
+    // tarjeta, historial, apartados, categorias
+    match /casa/{documento=**} {
+      allow read, write: if esCasa();
+    }
+
+    // Colecciones de movimientos en uso
+    match /casa_gastos/{documento=**} {
+      allow read, write: if esCasa();
+    }
+    match /casa_ingresos/{documento=**} {
+      allow read, write: if esCasa();
+    }
+    match /casa_transferencias/{documento=**} {
+      allow read, write: if esCasa();
+    }
+    // rastro de quien ajusto saldos a mano (escritura destructiva auditada)
+    match /casa_ajustes/{documento=**} {
+      allow read, write: if esCasa();
+    }
+
+    // Reservadas: la app de la casa TODAVIA no las usa (hoy las deudas
+    // viven en el documento casa/personas). Se dejan abiertas por
+    // adelantado para que, si se agregan, no haya que tocar reglas ni
+    // redeployar. No afectan el aislamiento: solo casa@lacasa.app entra.
+    match /casa_personas/{documento=**} {
+      allow read, write: if esCasa();
+    }
+    match /casa_deudas/{documento=**} {
+      allow read, write: if esCasa();
+    }
+    match /casa_stocksOps/{documento=**} {
+      allow read, write: if esCasa();
+    }
+
+
+    // ===============================================================
+    //  DENY-ALL FINAL
+    // ===============================================================
+    //  Firestore ya deniega por defecto todo lo que ninguna regla
+    //  permita, asi que este bloque es redundante — se deja explicito
+    //  como documentacion y como recordatorio de que aqui NO debe
+    //  aparecer nunca un `if request.auth != null` catch-all.
+    //  `if false` no puede otorgar nada bajo la semantica OR.
+    // ===============================================================
+    match /{documento=**} {
+      allow read, write: if false;
+    }
+  }
+}
