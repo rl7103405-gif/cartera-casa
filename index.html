@@ -402,6 +402,12 @@ table.mini th:first-child,table.mini td:first-child{text-align:left}
     <div class="total-sub" id="last-update">—</div>
   </div>
 
+  <!-- LO QUE APORTA PAPA ESTE MES -->
+  <div class="sec">
+    <div class="section-title">lo que aporta papa este mes</div>
+    <div class="panel" id="papa-panel"><div class="empty-state">calculando...</div></div>
+  </div>
+
   <!-- DONDE ESTA MI DINERO -->
   <div class="sec">
     <div class="section-title">donde esta mi dinero</div>
@@ -832,6 +838,9 @@ const auth = getAuth(app);
 // con correo activo: quien lo controle podria haber tomado la cuenta).
 // En la pantalla de login los tres escriben solo "casa"; la app traduce a este correo.
 const ALLOWED_EMAIL = 'rl7103405+casa@gmail.com';
+// Aportacion mensual que le toca al papa: $18,000 por cada hijo que vive en la casa
+// (hoy son 3). Es un DEFAULT: el monto real se edita desde la app y vive en casa/metas.
+const APORTE_MENSUAL_DEFAULT = 54000;
 // La meta de ahorro de la casa YA NO se quema aqui: vive en el documento casa/metas, se
 // carga en loadFromFirebase y se edita desde la pestana metas (state.meta / editarMeta).
 // Esta constante es solo la fecha que se propone la primera vez.
@@ -979,6 +988,7 @@ let state = {
   apartados:[],
   // meta de ahorro del hogar (doc casa/metas). monto 0 = todavia no la definen
   meta:{monto:0, fecha:META_FECHA_DEFAULT},
+  aporteMensual:APORTE_MENSUAL_DEFAULT,
   // perfil DEL HOGAR: nombre de la casa, cuantos viven en ella, si se paga renta y la foto.
   // vivienda es el unico campo con efecto real (alimenta estandarDe); vacio = estandar generico
   perfil:{nombre:'', habitantes:0, vivienda:'', foto:''},
@@ -1046,6 +1056,7 @@ async function loadFromFirebase() {
       state.meta={
         monto:(Number.isFinite(md.monto)&&md.monto>0)?md.monto:0,
         fecha:(typeof md.fecha==='string'&&fechaCalendarioValida(md.fecha))?md.fecha:META_FECHA_DEFAULT};
+      if(Number.isFinite(md.aporteMensual)&&md.aporteMensual>=0) state.aporteMensual=md.aporteMensual;
     }
     const tDoc = await getDoc(doc(db,NS,'tarjeta'));
     if (tDoc.exists()) { state.tarjetaDeuda = Number.isFinite(tDoc.data().deuda) ? tDoc.data().deuda : state.tarjetaDeuda; state.tarjetaMovimientos = Array.isArray(tDoc.data().movimientos) ? tDoc.data().movimientos : []; }
@@ -1485,6 +1496,7 @@ function render() {
   const saldoDeudas=Object.values(state.personas||{}).reduce((s,p)=>s+(p.saldo||0),0);
   const neto=total+saldoDeudas-(state.tarjetaDeuda||0);
   document.getElementById('neto-display').textContent='patrimonio neto (con deudas y tarjeta): '+fmt(neto);
+  renderPapa();
   renderDistribucion();
   renderMetas();
   renderApartados();
@@ -2576,6 +2588,66 @@ window.editarMeta = async function() {
     setSyncDot('err'); console.error('editarMeta',e);
     showToast('no se pudo confirmar — recarga la app antes de reintentar');
   }finally{ metaGuardando=false; }
+};
+
+// ── LO QUE APORTA PAPA ESTE MES ───────────────────────────────
+// Es de donde entra el dinero de la casa: cada ingreso registrado en el mes descuenta
+// de la aportacion acordada. Se cuentan TODOS los ingresos del mes (hoy no hay otra
+// fuente); por eso el panel dice de cuantos movimientos sale, para que se note si
+// alguien registro algo que no venia de papa.
+function renderPapa() {
+  const el=document.getElementById('papa-panel'); if(!el) return;
+  const meta=Number.isFinite(state.aporteMensual)?state.aporteMensual:APORTE_MENSUAL_DEFAULT;
+  const hoy=new Date();
+  const ini=new Date(hoy.getFullYear(),hoy.getMonth(),1);
+  const fin=new Date(hoy.getFullYear(),hoy.getMonth()+1,1);
+  const delMes=state.ingresos.filter(i=>{
+    if(!movValido(i)||movSinEfecto(i)) return false;
+    const t=msFechaMov(i.fecha);
+    return t!==null&&t>=ini.getTime()&&t<fin.getTime();
+  });
+  const dado=delMes.reduce((a,i)=>a+(Number.isFinite(i.monto)?i.monto:0),0);
+  const mesTxt=MESES[hoy.getMonth()];
+  const btn='<button type="button" class="del-btn" style="font-size:12px;color:var(--accent);padding:2px 0 2px 10px" onclick="editarAporte()">cambiar monto</button>';
+  if(meta<=0){
+    el.innerHTML='<div class="empty-state">no hay un monto acordado — define cuanto toca al mes</div>'+
+      '<div style="text-align:right">'+btn+'</div>';
+    return;
+  }
+  const falta=Math.max(0,meta-dado), pct=meta>0?dado/meta*100:0;
+  // dias que quedan del mes, contando hoy
+  const diasRest=Math.round((fin.getTime()-new Date(hoy.getFullYear(),hoy.getMonth(),hoy.getDate()).getTime())/86400000);
+  const sub = falta>0
+    ? ('faltan '+fmt(falta)+' · quedan '+diasRest+(diasRest===1?' dia':' dias')+' de '+mesTxt)
+    : (dado>meta ? ('completo · '+fmt(dado-meta)+' de mas') : 'completo · al corriente');
+  const detalle = delMes.length
+    ? (delMes.length+(delMes.length===1?' deposito registrado':' depositos registrados')+' en '+mesTxt)
+    : ('sin depositos registrados en '+mesTxt);
+  el.innerHTML=
+    '<div class="resumen-bar"><div class="bar-header"><span class="bar-label">'+(falta>0?'':'')+escapeHtml(mesTxt)+'</span>'+
+      '<span><span class="bar-amt" style="color:var(--accent-dark)">'+fmt(dado)+' / '+fmt(meta)+'</span>'+btn+'</span></div>'+
+    '<div class="bar-track" style="height:6px"><div class="bar-fill" style="width:'+Math.max(0,Math.min(100,pct)).toFixed(1)+'%"></div></div>'+
+    '<div class="item-meta" style="margin-top:4px">'+escapeHtml(sub)+' · '+escapeHtml(detalle)+'</div></div>';
+}
+window.editarAporte = async function() {
+  if(!requiereQuien()) return;
+  const actual=Number.isFinite(state.aporteMensual)?state.aporteMensual:APORTE_MENSUAL_DEFAULT;
+  const raw=prompt('Cuanto le toca aportar al mes? (0 para quitar el seguimiento)',String(actual));
+  if(raw===null) return;
+  const t=raw.trim();
+  if(t!==''&&!/^[0-9]+(\.[0-9]{1,2})?$/.test(t)){ showToast('monto no valido'); return; }
+  const monto=t===''?0:Math.round(parseFloat(t)*100)/100;
+  if(!Number.isFinite(monto)||monto<0){ showToast('monto no valido'); return; }
+  try{
+    if(!datosCargados) throw new Error('datos no cargados');
+    await setDoc(doc(db,NS,'metas'),{aporteMensual:monto},{merge:true});
+    state.aporteMensual=monto;
+    setSyncDot('ok'); renderPapa();
+    showToast('aportacion mensual actualizada');
+  }catch(e){
+    console.error('editarAporte',e); setSyncDot('err');
+    showToast('no se pudo guardar — revisa tu conexion');
+  }
 };
 
 // ── APARTADOS (metas del hogar: contadores visuales, no tocan cuentas) ──
