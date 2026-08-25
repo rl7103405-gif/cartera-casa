@@ -63,6 +63,11 @@ service cloud.firestore {
         && request.auth.token.email == 'zoe.frei@outlook.de';
     }
 
+    function esTono() {
+      return request.auth != null
+        && request.auth.token.email == 'tono32sa@gmail.com';
+    }
+
     function esCasa() {
       return request.auth != null
         && request.auth.token.email == 'rl7103405+casa@gmail.com';
@@ -157,6 +162,29 @@ service cloud.firestore {
     }
     match /casa_stocksOps/{documento=**} {
       allow read, write: if esCasa();
+    }
+
+
+    // ===============================================================
+    //  TONO — cartera-tono   (NS = 'tono', PFX = 'tono_')
+    //  Cartera personal del novio de Eli. Sus cuentas: efectivo, BBVA,
+    //  American Express y GBM.
+    // ===============================================================
+
+    match /tono/{documento=**} {
+      allow read, write: if esTono();
+    }
+    match /tono_gastos/{documento=**} {
+      allow read, write: if esTono();
+    }
+    match /tono_ingresos/{documento=**} {
+      allow read, write: if esTono();
+    }
+    match /tono_transferencias/{documento=**} {
+      allow read, write: if esTono();
+    }
+    match /tono_stocksOps/{documento=**} {
+      allow read, write: if esTono();
     }
 
 
