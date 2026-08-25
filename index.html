@@ -2617,15 +2617,16 @@ function renderPapa() {
   const falta=Math.max(0,meta-dado), pct=meta>0?dado/meta*100:0;
   // dias que quedan del mes, contando hoy
   const diasRest=Math.round((fin.getTime()-new Date(hoy.getFullYear(),hoy.getMonth(),hoy.getDate()).getTime())/86400000);
+  const pctTxt=pct.toFixed(1).replace(/\.0$/,'')+'%';
   const sub = falta>0
-    ? ('faltan '+fmt(falta)+' · quedan '+diasRest+(diasRest===1?' dia':' dias')+' de '+mesTxt)
-    : (dado>meta ? ('completo · '+fmt(dado-meta)+' de mas') : 'completo · al corriente');
+    ? ('lleva '+pctTxt+' · faltan '+fmt(falta)+' · quedan '+diasRest+(diasRest===1?' dia':' dias')+' de '+mesTxt)
+    : (dado>meta ? ('completo · '+pctTxt+' · '+fmt(dado-meta)+' de mas') : 'completo · 100%');
   const detalle = delMes.length
     ? (delMes.length+(delMes.length===1?' deposito registrado':' depositos registrados')+' en '+mesTxt)
     : ('sin depositos registrados en '+mesTxt);
   el.innerHTML=
     '<div class="resumen-bar"><div class="bar-header"><span class="bar-label">'+(falta>0?'':'')+escapeHtml(mesTxt)+'</span>'+
-      '<span><span class="bar-amt" style="color:var(--accent-dark)">'+fmt(dado)+' / '+fmt(meta)+'</span>'+btn+'</span></div>'+
+      '<span><span class="bar-amt" style="color:var(--accent-dark)">'+fmt(dado)+' / '+fmt(meta)+' · '+pct.toFixed(0)+'%</span>'+btn+'</span></div>'+
     '<div class="bar-track" style="height:6px"><div class="bar-fill" style="width:'+Math.max(0,Math.min(100,pct)).toFixed(1)+'%"></div></div>'+
     '<div class="item-meta" style="margin-top:4px">'+escapeHtml(sub)+' · '+escapeHtml(detalle)+'</div></div>';
 }
