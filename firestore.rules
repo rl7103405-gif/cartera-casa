@@ -68,6 +68,11 @@ service cloud.firestore {
         && request.auth.token.email == 'tono32sa@gmail.com';
     }
 
+    function esEli() {
+      return request.auth != null
+        && request.auth.token.email == 'elilinaresa@gmail.com';
+    }
+
     function esCasa() {
       return request.auth != null
         && request.auth.token.email == 'rl7103405+casa@gmail.com';
@@ -185,6 +190,29 @@ service cloud.firestore {
     }
     match /tono_stocksOps/{documento=**} {
       allow read, write: if esTono();
+    }
+
+
+    // ===============================================================
+    //  ELI — cartera-eli   (NS = 'eli', PFX = 'eli_')
+    //  Cartera personal de la hermana. Sus cuentas: efectivo, Nu,
+    //  BBVA y GBM.
+    // ===============================================================
+
+    match /eli/{documento=**} {
+      allow read, write: if esEli();
+    }
+    match /eli_gastos/{documento=**} {
+      allow read, write: if esEli();
+    }
+    match /eli_ingresos/{documento=**} {
+      allow read, write: if esEli();
+    }
+    match /eli_transferencias/{documento=**} {
+      allow read, write: if esEli();
+    }
+    match /eli_stocksOps/{documento=**} {
+      allow read, write: if esEli();
     }
 
 
