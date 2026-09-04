@@ -547,6 +547,11 @@ table.mini th:first-child,table.mini td:first-child{text-align:left}
   </div>
 
   </div>
+  <!-- solo aparece si el service worker bajo una version distinta a la que se esta viendo -->
+  <div id="aviso-version" hidden style="margin:12px 0 0;padding:10px 14px;border-radius:var(--rs);background:var(--bg3);border:0.5px solid var(--border2);font-size:13px;text-align:center">
+    hay una versión nueva de la app
+    <button type="button" class="btn btn-purple" style="margin-top:8px" onclick="location.reload()">recargar</button>
+  </div>
   <div class="status" id="status-inicio">—</div>
   <div class="status" id="version-app" style="margin-top:2px;padding-bottom:8px">—</div>
 </div>
@@ -830,7 +835,7 @@ table.mini th:first-child,table.mini td:first-child{text-align:left}
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, query, orderBy, runTransaction, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, getDoc, setDoc, updateDoc, collection, getDocs, query, orderBy, runTransaction, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 
 const firebaseConfig = {
@@ -851,7 +856,22 @@ const C_GASTOS=PFX+'gastos', C_INGRESOS=PFX+'ingresos', C_TRANSF=PFX+'transferen
 // (proyecto + nombre de instancia), asi que dos copias en el MISMO dominio ya no
 // comparten sesion ni se expulsan entre si.
 const app = initializeApp(firebaseConfig, NS);
-const db = getFirestore(app);
+// CACHE PERSISTENTE (IndexedDB): sin esto, cada apertura releia TODO de la red y en el
+// telefono con senal mala eso eran varios segundos de pantalla de carga. Con la cache,
+// si la red tarda o no hay, Firestore responde con lo ultimo guardado en el aparato.
+// OJO: esto NO vuelve instantaneo un getDoc por si solo (getDoc espera al servidor y
+// solo cae a cache si falla); lo que lo acelera de verdad es que las lecturas del
+// arranque ahora van en PARALELO (ver loadFromFirebase).
+// Puede fallar en modo privado o si el navegador no da IndexedDB: ahi se sigue sin cache.
+let db;
+try {
+  db = initializeFirestore(app, {
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+  });
+} catch (e) {
+  console.error('cache persistente no disponible, se sigue sin ella', e);
+  db = getFirestore(app);
+}
 const auth = getAuth(app);
 
 // Correo real de la cuenta compartida. Es un alias del Gmail de Roberto (+casa): lo
@@ -1037,7 +1057,32 @@ let state = {
 let datosCargados = false; // true solo cuando loadFromFirebase termina con exito (evita sobreescribir datos reales con defaults)
 async function loadFromFirebase() {
   try {
-    const sDoc = await getDoc(doc(db,NS,'saldos'));
+    // ARRANQUE EN PARALELO. Antes estas 9 lecturas iban una tras otra, cada una
+    // esperando a que volviera la anterior: en el telefono, con la latencia de la red
+    // celular, eran 9 viajes encadenados y la pantalla de carga se eternizaba. Ahora
+    // salen TODAS juntas y se espera una sola vez. El procesamiento de abajo conserva
+    // exactamente el mismo orden, asi que nada cambia de semantica.
+    const [
+      sDoc, pDoc, perDoc, tDoc, hDoc,
+      aDoc, cDoc, gSnap, iSnap,
+      trSnap, mDoc
+    ] = await Promise.all([
+      getDoc(doc(db,NS,'saldos')),
+      getDoc(doc(db,NS,'personas')),
+      getDoc(doc(db,NS,'perfil')),
+      getDoc(doc(db,NS,'tarjeta')),
+      getDoc(doc(db,NS,'historial')),
+      getDoc(doc(db,NS,'apartados')),
+      getDoc(doc(db,NS,'categorias')),
+      getDocs(query(collection(db,C_GASTOS), orderBy('fecha','desc'))),
+      getDocs(query(collection(db,C_INGRESOS), orderBy('fecha','desc'))),
+      getDocs(query(collection(db,C_TRANSF), orderBy('fecha','desc'))),
+      getDoc(doc(db,NS,'metas')),
+    ]);
+    // si los datos vinieron de la cache local (red caida o lentisima) NO se corren
+    // las siembras/migraciones: decidirian sobre un estado viejo y podrian reaplicar
+    // correcciones ya hechas. Se saltan y se reintentan en la proxima apertura con red.
+    const desdeCache = !!(sDoc && sDoc.metadata && sDoc.metadata.fromCache);
     if (sDoc.exists()) {
       const d = sDoc.data();
       // respaldo de los campos numericos antes de sobreescribir: si algo llega corrupto
@@ -1049,7 +1094,6 @@ async function loadFromFirebase() {
       });
     }
     // (sin siembras: esta plantilla arranca vacia; los datos los captura cada usuario)
-    const pDoc = await getDoc(doc(db,NS,'personas'));
     if (pDoc.exists()) {
       // el campo data debe ser un MAP {clave:persona}. Si quedo como ARRAY (dato viejo
       // de una version previa), Firestore descarta las claves nombradas al guardar y la
@@ -1072,11 +1116,11 @@ async function loadFromFirebase() {
     }
     // merge: si otro dispositivo acaba de crear una persona entre este getDoc y este
     // setDoc, no se la borramos escribiendo el mapa vacio encima
-    else await setDoc(doc(db,NS,'personas'), {data:state.personas}, {merge:true});
+    // sin red confirmada NO se siembra (ver comentario de desdeCache)
+    else if (!desdeCache) await setDoc(doc(db,NS,'personas'), {data:state.personas}, {merge:true});
     // perfil del hogar: campos corruptos caen al default sin bloquear la carga.
     // Los campos personales viejos (anoNac, dependientes, ingresoBase) se ignoran a
     // proposito: si quedaron en el documento no se leen ni se vuelven a escribir.
-    const perDoc = await getDoc(doc(db,NS,'perfil'));
     if (perDoc.exists()) {
       const pf=perDoc.data()||{};
       state.perfil={
@@ -1087,7 +1131,6 @@ async function loadFromFirebase() {
         foto:(typeof pf.foto==='string'&&/^data:image\/(?:jpeg|png);base64,[A-Za-z0-9+/]+={0,2}$/.test(pf.foto)&&pf.foto.length<900000)?pf.foto:''};
     }
     // meta de ahorro del hogar: monto positivo y fecha de calendario real, o se queda sin meta
-    const mDoc = await getDoc(doc(db,NS,'metas'));
     if (mDoc.exists()) {
       const md=mDoc.data()||{};
       state.meta={
@@ -1095,11 +1138,8 @@ async function loadFromFirebase() {
         fecha:(typeof md.fecha==='string'&&fechaCalendarioValida(md.fecha))?md.fecha:META_FECHA_DEFAULT};
       if(Number.isFinite(md.aporteMensual)&&md.aporteMensual>=0) state.aporteMensual=md.aporteMensual;
     }
-    const tDoc = await getDoc(doc(db,NS,'tarjeta'));
     if (tDoc.exists()) { state.tarjetaDeuda = Number.isFinite(tDoc.data().deuda) ? tDoc.data().deuda : state.tarjetaDeuda; state.tarjetaMovimientos = Array.isArray(tDoc.data().movimientos) ? tDoc.data().movimientos : []; }
-    const hDoc = await getDoc(doc(db,NS,'historial'));
     if (hDoc.exists()) state.snapshots = Array.isArray(hDoc.data().snapshots) ? hDoc.data().snapshots : [];
-    const aDoc = await getDoc(doc(db,NS,'apartados'));
     if (aDoc.exists() && Array.isArray(aDoc.data().items)) {
       // normalizacion por item: se descartan elementos corruptos (id/nombre/montos invalidos)
       state.apartados = aDoc.data().items.filter(a=>a&&typeof a.id==='string'&&/^[A-Za-z0-9-]+$/.test(a.id)
@@ -1109,17 +1149,13 @@ async function loadFromFirebase() {
           fechaLimite:(typeof a.fechaLimite==='string'&&/^\d{4}-(0[1-9]|1[0-2])$/.test(a.fechaLimite))?a.fechaLimite:'',
           creado:typeof a.creado==='string'?a.creado:''}));
     }
-    const cDoc = await getDoc(doc(db,NS,'categorias'));
     if (cDoc.exists()) {
       const cd = cDoc.data();
       if (Array.isArray(cd.catsGasto) && cd.catsGasto.length) state.catsGasto = cd.catsGasto;
       if (Array.isArray(cd.catsIngreso) && cd.catsIngreso.length) state.catsIngreso = cd.catsIngreso;
     }
-    const gSnap = await getDocs(query(collection(db,C_GASTOS), orderBy('fecha','desc')));
     state.gastos = gSnap.docs.map(d => ({id:d.id, ...d.data()}));
-    const iSnap = await getDocs(query(collection(db,C_INGRESOS), orderBy('fecha','desc')));
     state.ingresos = iSnap.docs.map(d => ({id:d.id, ...d.data()}));
-    const trSnap = await getDocs(query(collection(db,C_TRANSF), orderBy('fecha','desc')));
     state.transferencias = trSnap.docs.map(d => ({id:d.id, ...d.data()}));
     setSyncDot('ok');
     datosCargados = true;
@@ -3355,7 +3391,18 @@ actualizarOjo();
 marcarTemaActivo();
 marcarQuien(); // corre siempre, sin depender de Firestore: el chip nunca queda en blanco
 
-if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+if('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(()=>{});
+  // La app ahora se pinta desde la copia guardada en el aparato (arranque instantaneo) y
+  // la version fresca se baja por detras. Si la que acaba de bajar es distinta a la que
+  // estas viendo, el service worker avisa para poder recargar cuando convenga.
+  navigator.serviceWorker.addEventListener('message', e => {
+    if(e.data && e.data.tipo==='version-nueva') {
+      const el=document.getElementById('aviso-version');
+      if(el) el.hidden=false; else showToast('hay una version nueva — cierra y vuelve a abrir');
+    }
+  });
+}
 </script>
 </body>
 </html>
