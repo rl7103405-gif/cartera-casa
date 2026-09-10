@@ -3150,15 +3150,23 @@ function mesStats(y,m) {
 // (comparaciones en centavos: el punto flotante no debe romper el umbral exacto)
 function mesBueno(st) {
   const i=Math.round(st.totalI*100), g=Math.round(st.totalG*100), a=Math.round(st.aporte*100);
-  // el umbral de aportacion sale del ESTANDAR del usuario (mismo que usan coach y score)
-  const obj=estandarDe(state.perfil).ahorroObj;
-  return st.tieneDatos && i>0 && g<=i && a*100>=i*obj;
+  // LOS DOS umbrales salen del ESTANDAR del usuario — los mismos que el score y el coach
+  // enseñan en pantalla. Antes solo se exigia no gastar mas de lo que entro (100%), asi que
+  // el mismo panel podia decir "gastaste el 92% y tu referencia es 75%" arriba y "cerrando
+  // bien" dos renglones abajo. Un panel que se contradice solo no se vuelve a leer.
+  // OJO: con esto una racha vieja puede bajar — es correcto, antes contaba de mas.
+  const est=estandarDe(state.perfil);
+  return st.tieneDatos && i>0 && g*100<=i*est.gastoMax && a*100>=i*est.ahorroObj;
 }
-// racha de meses buenos CONSECUTIVOS terminando en el ultimo mes COMPLETO (max 24: '24+')
-function calcRacha() {
-  const now=new Date(); let r=0;
-  for(let i=1;i<=24;i++){
-    const d=new Date(now.getFullYear(),now.getMonth()-i,1);
+// racha de meses buenos CONSECUTIVOS que termina en el mes (y,m) INCLUSIVE (max 24: '24+').
+// Sin argumentos termina en el ultimo mes COMPLETO. Antes solo se calculaba para el mes
+// en curso, y el score se califica sobre el mes anterior: la constancia llegaba siempre
+// en 0/20 aunque hubiera meses cerrados bien. Lo reporto Roberto el 9-sep-2026.
+function calcRacha(hastaY, hastaM) {
+  if (hastaY === undefined) { const d=new Date(new Date().getFullYear(),new Date().getMonth()-1,1); hastaY=d.getFullYear(); hastaM=d.getMonth(); }
+  let r=0;
+  for(let i=0;i<24;i++){
+    const d=new Date(hastaY,hastaM-i,1);
     if(mesBueno(mesStats(d.getFullYear(),d.getMonth()))) r++; else break;
   }
   return r;
@@ -3216,7 +3224,9 @@ function calcularCierre(start,end,modo) {
   const diasMes=new Date(start.getFullYear(),start.getMonth()+1,0).getDate();
   return {start,end,modo,esAno,per,esActual,totalI,totalG,aporte,vacio,gPct,aPct,falta20,tops,comp,
     maduro,diaMes,diasMes,est:estPre,
-    racha:(esActual&&!esAno)?calcRacha():0};
+    // la racha termina en el mes que se esta viendo: si es el actual (a medias), en el
+    // anterior; si es uno ya cerrado, en ese mismo mes incluido
+    racha:esAno?0:(esActual?calcRacha():calcRacha(start.getFullYear(),start.getMonth()))};
 }
 
 // ── SCORE DE HABITOS (indice propio, no un diagnostico financiero) ──
@@ -3224,6 +3234,16 @@ function calcularCierre(start,end,modo) {
 // control de gasto, constancia y colchon. Los componentes sin datos se excluyen y se
 // renormaliza, informando cuales quedaron fuera.
 const SCORE_VER='1.0';
+// por que un mes NO cuenta como bueno, en una frase — para que 0/20 diga que arreglar
+function porQueNoConto(m) {
+  if(m.gPct===null) return 'no hay ingresos registrados';
+  if(m.gPct>100) return 'se gasto mas de lo que entro ('+m.gPct.toFixed(0)+'%)';
+  // el gasto va PRIMERO: es la razon mas comun desde que mesBueno lo exige, y sin esto
+  // caia en el generico de abajo justo cuando la respuesta estaba dos renglones arriba
+  if(m.gPct>m.est.gastoMax) return 'se gasto el '+m.gPct.toFixed(0)+'% y el tope es '+m.est.gastoMax+'%';
+  if(m.aPct<m.est.ahorroObj) return 'se aporto el '+Math.max(0,m.aPct).toFixed(0)+'% y la referencia es '+m.est.ahorroObj+'%';
+  return 'sin movimientos suficientes';
+}
 function calcScore(m) {
   if(!m||m.vacio) return null;
   const est=m.est, comps=[], excluidos=[];
@@ -3244,7 +3264,7 @@ function calcScore(m) {
   } else excluidos.push('control de gasto (sin ingresos registrados)');
   // 3) constancia (20): meses buenos seguidos, tope a 6 para no premiar eternamente lo mismo
   comps.push({nombre:'constancia',max:20,puntos:Math.round(20*Math.min(1,m.racha/6)),
-    detalle:(m.racha>=1?('llevan '+(m.racha>=24?'24 o mas':m.racha)+' mes(es) seguidos cerrando bien'):'aun sin meses cerrados con buen resultado')
+    detalle:(m.racha>=1?('llevan '+(m.racha>=24?'24 o mas':m.racha)+' mes(es) seguidos cerrando bien'):('este mes no conto: '+porQueNoConto(m)))
       +' · se recalcula con la referencia actual, asi que cambia si editan el perfil del hogar'});
   // 4) colchon (10): meses de gasto cubiertos por dinero DISPONIBLE de la casa
   // (debito BBVA + efectivo, sin lo que les deben) contra el objetivo del estandar
@@ -3309,7 +3329,9 @@ function textoAnalisis(m) {
     if(comp.dI!==null) ps.push('ingresaron '+(comp.dI>=0?'+':'−')+Math.abs(comp.dI).toFixed(0)+'%');
     p.push('Comparado con '+comp.mes+(comp.parcial?' (mismos dias del mes)':'')+', '+ps.join(' y ')+'.');
   }
-  if(racha>=1) p.push('Y llevan '+(racha>=24?'24 o mas':racha)+' mes'+(racha>1?'es':'')+' seguido'+(racha>1?'s':'')+' cerrando bien — esa racha es su mejor activo.');
+  // un mes YA CERRADO se cuenta en pasado: 'llevas' y 'no la rompas' son consejo de hoy,
+  // no descripcion de un cierre viejo (ahora los meses pasados si traen su racha)
+  if(racha>=1) p.push((esActual?'Y llevan ':'Y cerraron con ')+(racha>=24?'24 o mas':racha)+' mes'+(racha>1?'es':'')+' seguido'+(racha>1?'s':'')+' cerrando bien'+(esActual?' — esa racha es su mejor activo.':'.'));
   return p;
 }
 
@@ -3342,7 +3364,7 @@ function cierreMesHTML(m,label,capturar) {
       partes.join(' · '));
   }
   if(racha>=1) fila('🔥','racha de meses buenos',
-    (racha>=24?'24 o mas':racha)+' mes'+(racha>1?'es':'')+' seguido'+(racha>1?'s':'')+' cerrando bien — no la rompas',
+    (racha>=24?'24 o mas':racha)+' mes'+(racha>1?'es':'')+' seguido'+(racha>1?'s':'')+' cerrando bien'+(esActual?' — no la rompas':' hasta ese mes'),
     (racha>=24?'24+':String(racha)));
   tops.forEach(t=>{
     let meta=(totalG>0?(t.amt/totalG*100).toFixed(0):'0')+'% de sus gastos';
