@@ -231,6 +231,39 @@ service cloud.firestore {
       allow read, write: if esEli();
     }
 
+    // ---------------------------------------------------------------
+    //  AMIGOS (16-sep-2026): una ficha por cartera con INDICADORES del
+    //  mes (calificacion, bandas de gasto/ahorro, racha), nunca montos.
+    //  Lectura: solo la familia. Escritura: solo el dueno de esa ficha,
+    //  solo si en SU perfil tiene encendido 'amigos' (consentimiento que
+    //  el servidor verifica: una pestana vieja no puede republicar tras
+    //  apagarlo), y solo con los campos de la ficha (un bug del cliente
+    //  no puede publicar saldos).
+    // ---------------------------------------------------------------
+    function familia() { return esRoberto() || esEli() || esZoe() || esTono(); }
+    function duenoFicha(id) {
+      return (id == 'cartera' && esRoberto()) || (id == 'eli' && esEli())
+          || (id == 'zoe' && esZoe()) || (id == 'tono' && esTono());
+    }
+    function consiente(id) {
+      return get(/databases/$(database)/documents/$(id)/perfil).data.amigos == true;
+    }
+    function fichaValida() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['participa','nombre','inicial','mes','score','nivel','gasto','ahorro','racha','ahorroMes','ver','actualizado'])
+          && d.participa is bool
+          && (!('nombre' in d) || (d.nombre is string && d.nombre.size() <= 24))
+          && (!('score' in d) || d.score == null || (d.score is number && d.score >= 0 && d.score <= 100))
+          && (!('racha' in d) || d.racha == null || (d.racha is number && d.racha >= 0 && d.racha <= 100))
+          && (!('gasto' in d) || d.gasto == null || (d.gasto is string && d.gasto.size() <= 16))
+          && (!('ahorro' in d) || d.ahorro == null || (d.ahorro is string && d.ahorro.size() <= 16))
+          && (!('ahorroMes' in d) || d.ahorroMes == null || (d.ahorroMes is string && d.ahorroMes.size() <= 16));
+    }
+    match /amigos/{id} {
+      allow read: if familia();
+      allow write: if duenoFicha(id) && consiente(id) && fichaValida();
+    }
+
 
     // ===============================================================
     //  DENY-ALL FINAL
