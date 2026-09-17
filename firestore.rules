@@ -246,7 +246,9 @@ service cloud.firestore {
           || (id == 'zoe' && esZoe()) || (id == 'tono' && esTono());
     }
     function consiente(id) {
-      return get(/databases/$(database)/documents/$(id)/perfil).data.amigos == true;
+      // participar viene encendido: solo se niega si el dueño lo apago expresamente (amigos == false)
+      return !exists(/databases/$(database)/documents/$(id)/perfil)
+          || get(/databases/$(database)/documents/$(id)/perfil).data.amigos != false;
     }
     function fichaValida() {
       let d = request.resource.data;
