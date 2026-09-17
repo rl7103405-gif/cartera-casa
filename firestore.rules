@@ -246,9 +246,16 @@ service cloud.firestore {
           || (id == 'zoe' && esZoe()) || (id == 'tono' && esTono());
     }
     function consiente(id) {
-      // participar viene encendido: solo se niega si el dueño lo apago expresamente (amigos == false)
+      // Participar viene ENCENDIDO por defecto: solo se niega si el dueño lo apago
+      // expresamente (amigos == false).
+      // OJO CON EL ACCESOR: leer un campo AUSENTE de un mapa en estas reglas no devuelve
+      // nulo, da ERROR, y un error DENIEGA. Y el campo casi nunca existe, porque el
+      // "encendido por defecto" vive en el cliente y nadie escribe `amigos` hasta que
+      // alguien lo apaga. Con `.data.amigos` directo esto denegaba TODA escritura a
+      // amigos/<id> para los cuatro: ninguna ficha se publicaba ("todavia nadie participa")
+      // y nadie podia salir. Roto el 16-sep, encontrado el 17-sep-2026.
       return !exists(/databases/$(database)/documents/$(id)/perfil)
-          || get(/databases/$(database)/documents/$(id)/perfil).data.amigos != false;
+          || get(/databases/$(database)/documents/$(id)/perfil).data.get('amigos', true) != false;
     }
     function fichaValida() {
       let d = request.resource.data;
