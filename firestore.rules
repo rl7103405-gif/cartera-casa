@@ -103,6 +103,10 @@ service cloud.firestore {
     match /stocksOps/{documento=**} {
       allow read, write: if esRoberto();
     }
+    // tramos de rendimiento de las cuentas de interes (16-sep-2026): un doc por tramo cerrado
+    match /rendimientos/{documento=**} {
+      allow read, write: if esRoberto();
+    }
 
 
     // ===============================================================
@@ -125,6 +129,10 @@ service cloud.firestore {
       allow read, write: if esZoe();
     }
     match /zoe_stocksOps/{documento=**} {
+      allow read, write: if esZoe();
+    }
+    // tramos de rendimiento de las cuentas de interes (16-sep-2026): un doc por tramo cerrado
+    match /zoe_rendimientos/{documento=**} {
       allow read, write: if esZoe();
     }
 
@@ -191,6 +199,10 @@ service cloud.firestore {
     match /tono_stocksOps/{documento=**} {
       allow read, write: if esTono();
     }
+    // tramos de rendimiento de las cuentas de interes (16-sep-2026): un doc por tramo cerrado
+    match /tono_rendimientos/{documento=**} {
+      allow read, write: if esTono();
+    }
 
 
     // ===============================================================
@@ -212,6 +224,10 @@ service cloud.firestore {
       allow read, write: if esEli();
     }
     match /eli_stocksOps/{documento=**} {
+      allow read, write: if esEli();
+    }
+    // tramos de rendimiento de las cuentas de interes (16-sep-2026): un doc por tramo cerrado
+    match /eli_rendimientos/{documento=**} {
       allow read, write: if esEli();
     }
 
