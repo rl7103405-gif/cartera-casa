@@ -253,8 +253,13 @@ service cloud.firestore {
       return d.keys().hasOnly(['participa','nombre','inicial','mes','score','nivel','gasto','ahorro','racha','ahorroMes','ver','actualizado'])
           && d.participa is bool
           && (!('nombre' in d) || (d.nombre is string && d.nombre.size() <= 24))
+          && (!('inicial' in d) || d.inicial == null || (d.inicial is string && d.inicial.size() <= 4))
+          && (!('mes' in d) || d.mes == null || (d.mes is string && d.mes.size() <= 7))
+          && (!('nivel' in d) || d.nivel == null || (d.nivel is string && d.nivel.size() <= 24))
+          && (!('ver' in d) || d.ver == null || (d.ver is string && d.ver.size() <= 8))
+          && (!('actualizado' in d) || (d.actualizado is string && d.actualizado.size() <= 32))
           && (!('score' in d) || d.score == null || (d.score is number && d.score >= 0 && d.score <= 100))
-          && (!('racha' in d) || d.racha == null || (d.racha is number && d.racha >= 0 && d.racha <= 100))
+          && (!('racha' in d) || d.racha == null || (d.racha is number && d.racha >= 0 && d.racha <= 24))
           && (!('gasto' in d) || d.gasto == null || (d.gasto is string && d.gasto.size() <= 16))
           && (!('ahorro' in d) || d.ahorro == null || (d.ahorro is string && d.ahorro.size() <= 16))
           && (!('ahorroMes' in d) || d.ahorroMes == null || (d.ahorroMes is string && d.ahorroMes.size() <= 16));
