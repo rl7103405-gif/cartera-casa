@@ -77,4 +77,10 @@ Ver `README.md` para el paso a paso completo.
   balance total.**
 - **Limitación aceptada:** los ingresos no se sincronizan en vivo entre teléfonos (límite de
   lecturas). La tarjeta pide recargar.
-- **Pruebas:** `node test-papa.mjs`, 21 casos contra las funciones reales del `index.html`.
+- **Solo cuenta el dinero de papá:** cada ingreso lleva `dePapa`. El alta y el lápiz tienen el toggle
+  "¿es dinero de papá?". `esDePapa` = true o ausente: los ingresos de antes del 30/09 cuentan como
+  antes, y un valor raro no cuenta. Editar escribe `dePapa` SOLO si cambió.
+- **Movimientos, "quién registró los gastos":** sale por persona del periodo, con filtro que se
+  conserva al cambiar de periodo. Las claves salen de `QUIENES`, nunca del dato. Clases `.qr-*`:
+  `.quien-bar` ya existía y chocaban.
+- **Pruebas:** `node test-papa.mjs`, 23 casos contra las funciones reales del `index.html`.

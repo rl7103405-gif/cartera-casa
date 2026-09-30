@@ -235,6 +235,14 @@ nav{position:sticky;top:0;z-index:100;background:var(--nav-bg);backdrop-filter:b
 .item-row:last-child{border-bottom:none}
 .item-cat{font-size:13px;font-weight:500}.item-meta{font-size:12px;color:var(--muted);margin-top:2px}
 .item-amt-neg{font-size:14px;font-weight:600;color:var(--red)}
+.qr-row{display:grid;grid-template-columns:92px 1fr auto;align-items:center;gap:10px;width:100%;min-height:44px;background:none;border:0;padding:4px 6px;border-radius:var(--rs);font-family:inherit;color:var(--text);cursor:pointer;text-align:left}
+.qr-row.on{background:var(--bg3)}
+#ingreso-papa-toggle .type-opt,#edit-mov-papa-toggle .type-opt{min-height:44px}
+.qr-quitar{min-height:44px;padding:0 8px;font-size:12px;color:var(--accent)}
+.qr-nom{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qr-bar{height:8px;background:var(--bg3);border-radius:4px;overflow:hidden}
+.qr-bar span{display:block;height:100%;background:var(--accent)}
+.qr-val{font-size:12px;color:var(--muted);white-space:nowrap}
 .item-amt-pos{font-size:14px;font-weight:600;color:var(--green)}
 .empty-state{font-size:13px;color:var(--muted);text-align:center;padding:20px 0}
 
@@ -633,6 +641,12 @@ table.mini th:first-child,table.mini td:first-child{text-align:left}
           <div class="type-opt" onclick="setDestinoIngreso('nu')">débito BBVA</div>
         </div>
       </div>
+      <div class="field"><label>¿es dinero de papá?</label>
+        <div class="type-toggle" id="ingreso-papa-toggle">
+          <button type="button" class="type-opt active" aria-pressed="true" onclick="setIngresoPapa(true)">sí, de papá</button>
+          <button type="button" class="type-opt" aria-pressed="false" onclick="setIngresoPapa(false)">no, es otro</button>
+        </div>
+      </div>
       <button class="btn btn-green" id="ingreso-btn" onclick="registrarIngreso()">registrar ingreso</button>
     </div>
     </div>
@@ -655,6 +669,7 @@ table.mini th:first-child,table.mini td:first-child{text-align:left}
       <div class="month-label" id="mov-periodo-label">—</div>
       <button class="month-nav" onclick="cambiarPeriodoMov(1)">&#8250;</button>
     </div>
+    <div id="mov-quien"></div>
     <div class="panel" id="movimientos-historial"><div class="empty-state">sin movimientos registrados</div></div>
   </div>
   </div>
@@ -690,7 +705,7 @@ table.mini th:first-child,table.mini td:first-child{text-align:left}
     <div class="panel">
       <div class="field"><label>cuánto le toca al mes</label><input type="number" id="aporte-monto" placeholder="ej. 54000" step="0.01" inputmode="decimal"></div>
       <div class="field"><label>desde qué mes (AAAA-MM)</label><input type="text" id="aporte-desde" placeholder="ej. 2026-09" inputmode="numeric" maxlength="7" autocomplete="off"></div>
-      <div class="item-meta" style="line-height:1.5">El monto aplica al mes completo. Si el número estaba mal, guárdenlo con el mes desde el que estaba mal y todo se recalcula. Lo que papá dé de más o de menos en un mes se descuenta o se suma al siguiente; lo ven en deudas.</div>
+      <div class="item-meta" style="line-height:1.5">El monto aplica al mes completo. Si el número estaba mal, guárdenlo con el mes desde el que estaba mal y todo se recalcula. Lo que papá dé de más o de menos en un mes se descuenta o se suma al siguiente; lo ven en deudas. Solo cuentan los ingresos marcados como de papá.</div>
       <button type="button" class="btn" id="aporte-btn" onclick="guardarAporte()">guardar</button>
       <div id="aporte-historial"></div>
     </div>
@@ -858,6 +873,12 @@ table.mini th:first-child,table.mini td:first-child{text-align:left}
     <div class="modal-sub" id="edit-mov-sub"></div>
     <div class="field"><label>categoría</label><select id="edit-mov-cat"></select></div>
     <div class="field"><label>nota</label><input type="text" id="edit-mov-nota" placeholder="opcional"></div>
+    <div class="field" id="edit-mov-papa" hidden><label>¿es dinero de papá?</label>
+      <div class="type-toggle" id="edit-mov-papa-toggle">
+        <button type="button" class="type-opt" onclick="setEditPapa(true)">sí, de papá</button>
+        <button type="button" class="type-opt" onclick="setEditPapa(false)">no, es otro</button>
+      </div>
+    </div>
     <button type="button" class="btn btn-purple" id="edit-mov-btn" onclick="guardarEdicionMov()">guardar cambios</button>
     <button type="button" class="btn" style="margin-top:8px" onclick="cerrarEdicionMov()">cancelar</button>
   </div>
@@ -1109,7 +1130,7 @@ const PERSONAS_DEFAULT = {}; // sin personas precargadas: se agregan desde la ap
 let state = {
   nuSaldo:0, efectivo:0,
   tarjetaDeuda:0, tarjetaMovimientos:[],
-  fuenteGasto:'efectivo', destinoIngreso:'efectivo', tipoDeuda:'cargo',
+  fuenteGasto:'efectivo', destinoIngreso:'efectivo', tipoDeuda:'cargo', ingresoDePapa:true,
   mesOffset:0, resPeriodo:'mes',
   catsGasto:[...CATS_GASTO_DEFAULT], catsIngreso:[...CATS_INGRESO_DEFAULT],
   apartados:[],
@@ -2141,6 +2162,7 @@ window.setMovTipo = t => {
   window.setMovFiltro(t==='gasto'?'gastos':'ingresos');
 };
 window.setFuente = f => { state.fuenteGasto=f; document.querySelectorAll('#gasto-fuente-toggle .type-opt').forEach((el,i)=>el.classList.toggle('active',['efectivo','nu','tarjeta'][i]===f)); };
+window.setIngresoPapa = v => { state.ingresoDePapa=!!v; document.querySelectorAll('#ingreso-papa-toggle .type-opt').forEach((el,i)=>{ const on=(i===0)===state.ingresoDePapa; el.classList.toggle('active',on); el.setAttribute('aria-pressed',String(on)); }); };
 window.setDestinoIngreso = f => { state.destinoIngreso=f; document.querySelectorAll('#ingreso-destino-toggle .type-opt').forEach((el,i)=>el.classList.toggle('active',['efectivo','nu'][i]===f)); };
 window.setTipoDeuda = t => { state.tipoDeuda=t; ['cargo','pago','debo','pague'].forEach(id=>document.getElementById('tipo-'+id).classList.toggle('active',id===t)); };
 
@@ -2532,6 +2554,34 @@ window.eliminarGasto = async function(id) {
 // historial combinado de gastos e ingresos con filtro de periodo (dia/semana/mes/ano)
 let movPeriodo='mes', movOffset=0;
 let movFiltro='todos'; // filtro del historial: todos | gastos | ingresos (no toca periodo/offset)
+// filtro por quién registró (30-sep): índice en QUIENES como texto, 'x' = sin identificar, null = todos.
+// Se conserva al cambiar de periodo o de tipo; las claves salen de la lista blanca, nunca del dato
+let movQuien=null;
+const quienKey=it=>{ const i=QUIENES.indexOf(it.registradoPor); return i>=0?String(i):'x'; };
+const quienNom=k=>k==='x'?'sin identificar':QUIENES[+k];
+window.setMovQuien = k => {
+  if(!QUIENES.map((q,i)=>String(i)).concat('x').includes(k)) return;
+  movQuien=(movQuien===k)?null:k;
+  // tocar un nombre enseña SUS GASTOS, que es de lo que habla el panel
+  if(movQuien!==null&&movFiltro!=='gastos') window.setMovFiltro('gastos'); else renderMovimientos();
+};
+function renderQuien(enRango,label){
+  const el=document.getElementById('mov-quien'); if(!el) return;
+  // dinero que sí se movió: sin pendientes ni rechazados del atajo; TODO el periodo (antes del tope de 200)
+  const gs=state.gastos.filter(g=>movValido(g)&&!movSinEfecto(g)&&enRango(g));
+  const grupos=QUIENES.map((q,i)=>({k:String(i),n:0,c:0})).concat([{k:'x',n:0,c:0}]);
+  gs.forEach(g=>{ const gr=grupos.find(x=>x.k===quienKey(g)); gr.n++; gr.c+=Math.round(g.monto*100); });
+  const vis=grupos.filter(g=>g.k!=='x'||g.n>0);
+  const max=Math.max(1,...vis.map(g=>g.c));
+  const lider=gs.length?vis.slice().sort((a,b)=>b.n-a.n||b.c-a.c)[0]:null;
+  el.innerHTML='<div class="panel" style="margin-bottom:12px">'
+    +'<div class="item-meta" style="margin-bottom:6px">quién registró los gastos · '+escapeHtml(label)
+    +(lider&&lider.k!=='x'?' · más activo: <b>'+escapeHtml(quienNom(lider.k))+'</b>':'')+'</div>'
+    +vis.map(g=>`<button type="button" class="qr-row${movQuien===g.k?' on':''}" aria-pressed="${movQuien===g.k}" onclick="setMovQuien('${g.k}')">`
+      +`<span class="qr-nom">${escapeHtml(quienNom(g.k))}</span><span class="qr-bar"><span style="width:${(g.c/max*100).toFixed(1)}%"></span></span>`
+      +`<span class="qr-val">${g.n} ${g.n===1?'gasto':'gastos'} · ${fmt(g.c/100)}</span></button>`).join('')
+    +'<div class="item-meta" style="margin-top:6px">'+(gs.length?'es quién los capturó, no quién pagó · sin pendientes del atajo · toca un nombre para ver solo lo suyo':'sin gastos en este periodo')+'</div></div>';
+}
 window.setMovFiltro = f => {
   movFiltro=f;
   document.querySelectorAll('#mov-filtro-toggle .type-opt').forEach((el,i)=>{
@@ -2554,14 +2604,18 @@ function renderMovimientos() {
   // filtrar primero (fechas invalidas fuera), ordenar despues, cap al final
   const enRango=it=>{ const t=msFechaMov(it.fecha); return t!==null&&t>=start.getTime()&&t<end.getTime(); };
   // el filtro se aplica ANTES del cap de 200 para no recortar el tipo elegido
+  renderQuien(enRango,label);
+  const porQuien=it=>movQuien===null||quienKey(it)===movQuien;
   const todos=[
-    ...(movFiltro!=='ingresos'?state.gastos.filter(enRango).map(it=>({tipo:'gasto',it})):[]),
-    ...(movFiltro!=='gastos'?state.ingresos.filter(enRango).map(it=>({tipo:'ingreso',it})):[])
+    ...(movFiltro!=='ingresos'?state.gastos.filter(it=>enRango(it)&&porQuien(it)).map(it=>({tipo:'gasto',it})):[]),
+    ...(movFiltro!=='gastos'?state.ingresos.filter(it=>enRango(it)&&porQuien(it)).map(it=>({tipo:'ingreso',it})):[])
   ];
-  if(!todos.length){c.innerHTML='<div class="empty-state">sin '+(movFiltro==='todos'?'movimientos':movFiltro)+' en este periodo</div>';return;}
+  // el filtro por persona se ve aunque no haya resultados, con su forma de quitarlo
+  const chip=movQuien===null?'':('<div class="item-meta" style="padding:2px 0 8px">solo lo que registró <b>'+escapeHtml(quienNom(movQuien))+'</b> · <button type="button" class="del-btn qr-quitar" onclick="setMovQuien(\''+movQuien+'\')">quitar filtro</button></div>');
+  if(!todos.length){c.innerHTML=chip+'<div class="empty-state">sin '+(movFiltro==='todos'?'movimientos':movFiltro)+' en este periodo</div>';return;}
   todos.sort((a,b)=>(msFechaMov(b.it.fecha)||0)-(msFechaMov(a.it.fecha)||0));
   const recortado=todos.length>200;
-  c.innerHTML=(recortado?'<div class="item-meta" style="text-align:center;padding:6px 0">mostrando los 200 más recientes de '+todos.length+'</div>':'')+
+  c.innerHTML=chip+(recortado?'<div class="item-meta" style="text-align:center;padding:6px 0">mostrando los 200 más recientes de '+todos.length+'</div>':'')+
   todos.slice(0,200).map(m=>{
     const it=m.it;
     const fecha=fmtFechaMov(it.fecha,{day:'numeric',month:'short'});
@@ -2571,8 +2625,9 @@ function renderMovimientos() {
     const del=it.id?`<button class="del-btn" onclick="${esGasto?'eliminarGasto':'eliminarIngreso'}('${it.id}')">&times;</button>`:'';
     // editar corrige la captura SIN mover dinero ni fecha: por eso no hace falta borrar y volver a registrar
     const edit=it.id?`<button class="edit-btn" title="editar categoría o nota" aria-label="editar categoría o nota" onclick="editarMovimiento('${esGasto?'gasto':'ingreso'}','${it.id}')">&#9998;</button>`:'';
+    const noPapa=(!esGasto&&!esDePapa(it))?' · no es de papá':'';
     const marca=it.pendiente===true?' · atajo: pendiente de aplicar':(it.porAtajo===true&&it.aplicadoSaldo===false?' · atajo: rechazado (no afectó saldos)':'');
-    return`<div class="item-row"><div><div class="item-cat">${escapeHtml(it.cat)}</div><div class="item-meta">${escapeHtml(it.nota||'')} · ${fecha} · ${cuenta}${marca}${quienTxt(it.registradoPor)}</div></div><div style="display:flex;align-items:center"><div class="${esGasto?'item-amt-neg':'item-amt-pos'}">${esGasto?'-':'+'}${fmt(it.monto)}</div>${edit}${del}</div></div>`;
+    return`<div class="item-row"><div><div class="item-cat">${escapeHtml(it.cat)}</div><div class="item-meta">${escapeHtml(it.nota||'')} · ${fecha} · ${cuenta}${marca}${noPapa}${quienTxt(it.registradoPor)}</div></div><div style="display:flex;align-items:center"><div class="${esGasto?'item-amt-neg':'item-amt-pos'}">${esGasto?'-':'+'}${fmt(it.monto)}</div>${edit}${del}</div></div>`;
   }).join('');
 }
 
@@ -2580,7 +2635,8 @@ function renderMovimientos() {
 // Corregir una captura vieja borrandola y volviendola a registrar la movia al mes
 // ACTUAL (la fecha se regeneraba), ensuciando los totales. Editar en su lugar conserva
 // fecha, monto y cuenta intactos: por eso esta edicion NUNCA toca saldos.
-let editMov=null, editandoMov=false;
+let editMov=null, editandoMov=false, editPapa=true;
+window.setEditPapa = v => { if(editandoMov) return; editPapa=!!v; document.querySelectorAll('#edit-mov-papa-toggle .type-opt').forEach((el,i)=>{ const on=(i===0)===editPapa; el.classList.toggle('active',on); el.setAttribute('aria-pressed',String(on)); }); };
 window.editarMovimiento = function(tipo, id) {
   if(!requiereQuien()) return; // cartera compartida: se deja rastro de quien corrige
   const arr = tipo==='gasto'?state.gastos:state.ingresos;
@@ -2598,6 +2654,9 @@ window.editarMovimiento = function(tipo, id) {
     +cats.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
   sel.value=it.cat;
   document.getElementById('edit-mov-nota').value=it.nota||'';
+  // ¿es de papá? solo existe para ingresos; se reinicia con el valor de ESTE ingreso
+  document.getElementById('edit-mov-papa').hidden=tipo!=='ingreso';
+  window.setEditPapa(tipo==='ingreso'?esDePapa(it):true);
   document.getElementById('edit-mov-tit').textContent='editar '+tipo;
   // el subtitulo recuerda lo que NO se puede cambiar aqui
   const cuenta=CUENTAS[tipo==='gasto'?it.fuente:it.destino]||'(cuenta desconocida)';
@@ -2629,7 +2688,8 @@ window.guardarEdicionMov = async function() {
   const cat=document.getElementById('edit-mov-cat').value;
   const nota=document.getElementById('edit-mov-nota').value.trim();
   if(!cat){ showToast('elige una categoría'); return; }
-  if(cat===it.cat && nota===(it.nota||'')){ window.cerrarEdicionMov(); return; } // sin cambios
+  const cambiaPapa=tipo==='ingreso'&&editPapa!==esDePapa(it);
+  if(cat===it.cat && nota===(it.nota||'') && !cambiaPapa){ window.cerrarEdicionMov(); return; } // sin cambios
   const btn=document.getElementById('edit-mov-btn');
   editandoMov=true; btn.disabled=true;
   try{
@@ -2637,8 +2697,11 @@ window.guardarEdicionMov = async function() {
     // nunca queda mintiendo. update PARCIAL de dos campos: nunca monto/fuente/destino/
     // fecha, asi que tampoco se pisan las banderas del atajo (pendiente/aplicadoSaldo).
     // updateDoc ademas FALLA si el doc ya no existe, en vez de resucitarlo.
-    await updateDoc(doc(db, tipo==='gasto'?C_GASTOS:C_INGRESOS, id), {cat, nota, editadoPor:quienSoy()});
-    it.cat=cat; it.nota=nota; it.editadoPor=quienSoy();
+    const cambios={cat, nota, editadoPor:quienSoy()};
+    // solo si cambió: un teléfono desactualizado no revierte la corrección que hizo otro
+    if(cambiaPapa) cambios.dePapa=editPapa;
+    await updateDoc(doc(db, tipo==='gasto'?C_GASTOS:C_INGRESOS, id), cambios);
+    it.cat=cat; it.nota=nota; it.editadoPor=quienSoy(); if('dePapa' in cambios) it.dePapa=cambios.dePapa;
     setSyncDot('ok');
     rerenderTodo(); // la categoría alimenta resumen, pastel, coach y el aviso de Premium
     showToast('movimiento actualizado');
@@ -2662,14 +2725,14 @@ window.guardarEdicionMov = async function() {
 
 // ── INGRESOS ──────────────────────────────────────────────────
 // nucleo compartido (mismo esquema que altaGasto): formulario normal + registro rapido
-async function altaIngreso(cat,monto,nota,destino,btn) {
+async function altaIngreso(cat,monto,nota,destino,btn,dePapa=true) {
   if(!requiereQuien()) return false;
   if(!Number.isFinite(monto)||monto<=0){showToast('ingresa un monto válido');return false;}
   if(!DESTINOS_INGRESO.includes(destino)){showToast('destino no válido');return false;}
   if(dineroOcupado){showToast('espera, hay otra operación en curso');return false;}
   const m=c2(monto);
   const ref=doc(collection(db,C_INGRESOS));
-  const ingreso={cat,monto:m,nota,destino,registradoPor:quienSoy(),fecha:new Date().toISOString()};
+  const ingreso={cat,monto:m,nota,destino,dePapa:dePapa!==false,registradoPor:quienSoy(),fecha:new Date().toISOString()};
   let res=null,err=null;
   if(btn) btn.disabled=true; dineroOcupado=true;
   try{ res=await txDinero({deltas:{[CAMPO_CUENTA[destino]]:m}, crear:[{ref,data:ingreso}]}); }
@@ -2690,8 +2753,10 @@ window.registrarIngreso = async function() {
     parseFloat(document.getElementById('ingreso-monto').value),
     document.getElementById('ingreso-nota').value.trim(),
     state.destinoIngreso,
-    document.getElementById('ingreso-btn'));
-  if(ok){ document.getElementById('ingreso-monto').value='';document.getElementById('ingreso-nota').value=''; }
+    document.getElementById('ingreso-btn'),
+    state.ingresoDePapa);
+  // tras un alta el toggle regresa a "de papá": que un "otro" no se quede pegado al siguiente
+  if(ok){ document.getElementById('ingreso-monto').value='';document.getElementById('ingreso-nota').value=''; window.setIngresoPapa(true); }
 };
 
 window.eliminarIngreso = async function(id) {
@@ -3355,9 +3420,8 @@ window.editarMeta = async function() {
 };
 
 // ── LO QUE APORTA PAPA ────────────────────────────────────────
-// Es de donde entra el dinero de la casa: se cuentan TODOS los ingresos del mes (hoy papá
-// es la única fuente); por eso cada mes dice de cuántos depósitos sale, para que se note si
-// alguien registró algo que no venía de él.
+// Es de donde entra el dinero de la casa. Desde el 30-sep solo cuentan los ingresos marcados
+// como de papá (esDePapa); cada mes dice de cuántos depósitos sale.
 // 30-sep-2026: el monto tiene HISTORIAL (casa/metas.aportes = [{desde:'AAAA-MM', monto}]; el
 // de cada mes es la última entrada con desde <= mes) y lo que papá da de más o de menos en
 // un mes cerrado se ARRASTRA al siguiente. El arrastre se CALCULA con los ingresos, nunca se
@@ -3384,11 +3448,14 @@ function aplicarAportes(md){
 function cuotaDe(k){ let c=null; for(const a of state.aportes){ if(a.desde<=k) c=a.monto; else break; } return c; }
 // fecha de un ingreso en ms: una AAAA-MM-DD pelada se toma como día LOCAL (msFechaMov la leería como UTC)
 const msIngreso=f=>(typeof f==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(f))?parseFechaLocal(f).getTime():msFechaMov(f);
+// solo cuenta el dinero de papá (30-sep): dePapa true, o AUSENTE (ingresos de antes del campo, que así se
+// contaban; se corrigen con el lápiz). Un valor raro ("false" por REST, null) NO cuenta
+const esDePapa=i=>i.dePapa===true||i.dePapa===undefined;
 function recibidoEnMes(y,m){
   const ini=new Date(y,m,1).getTime(), fin=new Date(y,m+1,1).getTime();
   let c=0,n=0;
   state.ingresos.forEach(i=>{
-    if(!movValido(i)||movSinEfecto(i)) return;
+    if(!movValido(i)||movSinEfecto(i)||!esDePapa(i)) return;
     const t=msIngreso(i.fecha);
     if(t!==null&&t>=ini&&t<fin){ c+=Math.round(i.monto*100); n++; }
   });
@@ -3414,7 +3481,7 @@ function cuentaPapa(){
   return {inicio,actual,meses,arrastre:arrC/100,cuota,dado:r.dado,n:r.n,leToca:tocaC/100,
     pendiente:Math.max(0,tocaC-dadoC)/100, deMas:Math.max(0,dadoC-tocaC)/100}; // deMas = lo que pasa a favor al mes siguiente
 }
-const txtDepositos=n=>n+(n===1?' depósito':' depósitos');
+const txtDepositos=n=>n+(n===1?' depósito':' depósitos')+' de papá';
 function renderPapa() {
   const el=document.getElementById('papa-panel'); if(!el) return;
   renderPapaDeuda();
@@ -3438,7 +3505,7 @@ function renderPapa() {
     meta=Number.isFinite(state.aporteMensual)?state.aporteMensual:APORTE_MENSUAL_DEFAULT;
     const r=recibidoEnMes(hoy.getFullYear(),hoy.getMonth()); dado=r.dado; n=r.n;
   }
-  const detalle=n?(txtDepositos(n)+(n===1?' registrado':' registrados')+' en '+mesTxt):('sin depósitos registrados en '+mesTxt);
+  const detalle=n?(txtDepositos(n)+' en '+mesTxt):('sin depósitos de papá en '+mesTxt);
   if(meta<=0){
     el.innerHTML=(c
       ? '<div class="item-meta">'+escapeHtml(mesTxt)+': este mes no le toca nada ('+escapeHtml(ajuste||('cuota '+fmt(c.cuota)))+')'+(dado>0?(' · ya dio '+fmt(dado)+', se pasa a favor del mes siguiente'):'')+'</div>'
@@ -3459,21 +3526,34 @@ function renderPapa() {
 }
 // Deudas: tarjeta DERIVADA de solo lectura (no es una persona de casa/personas ni entra al
 // balance total: se arregla con los depósitos de papá del mes que sigue)
-function renderPapaDeuda(){
-  const el=document.getElementById('papa-deuda'); if(!el) return;
-  const c=datosCargados?cuentaPapa():null;
-  if(!c){ el.innerHTML=''; return; }
-  const abierta=!!document.querySelector('#d-papa-aporte.open');
+// cómo están HOY (lo usan Deudas y Perfil): un faltante que papá ya cubrió este mes no se sigue
+// mostrando como deuda (lo depositado cubre primero lo atrasado)
+function estadoPapa(c){
   const a=c.arrastre, mesAct=nombreMes(c.actual);
   const [yA,mA]=c.actual.split('-').map(Number), mesSig=nombreMes(mesKey(new Date(yA,mA,1)));
-  // el encabezado dice cómo están HOY, no solo lo arrastrado: un faltante que papá ya cubrió
-  // este mes no se sigue mostrando como deuda (lo depositado cubre primero lo atrasado)
   const atrasado=a<-0.004?Math.max(0,Math.round((-a-c.dado)*100)/100):0;
-  let sub, monto, cls;   // convención de deudas: pos = nos debe
-  if(c.deMas>0){ sub='va de más · se descuenta de '+mesSig; monto=c.deMas; cls='neg'; }
-  else if(atrasado>0){ sub='falta de meses pasados · se suma a '+mesAct; monto=atrasado; cls='pos'; }
-  else if(a>0.004){ sub='a favor · se descuenta de '+mesAct; monto=a; cls='neg'; }
-  else { sub='al corriente'; monto=0; cls='neg'; }
+  if(c.deMas>0) return {sub:'va de más · se descuenta de '+mesSig, monto:c.deMas, cls:'neg'};
+  if(atrasado>0) return {sub:'falta de meses pasados · se suma a '+mesAct, monto:atrasado, cls:'pos'};
+  if(a>0.004) return {sub:'a favor · se descuenta de '+mesAct, monto:a, cls:'neg'};
+  return {sub:'al corriente', monto:0, cls:'neg'};
+}
+function renderPapaDeuda(){
+  const el=document.getElementById('papa-deuda'); if(!el) return;
+  if(!datosCargados){ el.innerHTML=''; return; }
+  const c=cuentaPapa();
+  if(!c){
+    // sin historial de montos la cuenta entre meses todavía no existe: se dice y se lleva al perfil
+    const txt=state.aportes.length
+      ? ('la cuenta empieza en '+nombreMes(state.aporteInicio||state.aportes[0].desde))
+      : 'todavía no se lleva lo que sobra o falta entre meses: guarden el monto en perfil';
+    el.innerHTML='<div class="deuda-person"><button type="button" class="deuda-header" style="width:100%;border:0;background:none;font:inherit;color:inherit;text-align:left;cursor:pointer" onclick="editarAporte()"><div><div class="deuda-name">papá · aportación</div>'
+      +'<div class="deuda-sub">'+escapeHtml(txt)+'</div></div>'
+      +'<div class="deuda-total" style="font-size:13px;color:var(--accent)">ir a perfil ›</div></button></div>';
+    return;
+  }
+  const abierta=!!document.querySelector('#d-papa-aporte.open');
+  const a=c.arrastre, mesAct=nombreMes(c.actual);
+  const {sub,monto,cls}=estadoPapa(c);   // convención de deudas: pos = nos debe
   const neutro='font-size:13px;font-weight:600;white-space:nowrap;padding-left:8px';
   const actual=['cuota '+fmt(c.cuota),
     a>0.004?('viene '+fmt(a)+' a favor'):a<-0.004?('viene '+fmt(-a)+' que faltó'):'',
@@ -3486,7 +3566,7 @@ function renderPapaDeuda(){
       return `<div class="item-row"><div><div class="item-cat">${escapeHtml(nombreMes(x.k))}</div><div class="item-meta">${escapeHtml('dio '+fmt(x.dado)+' de '+fmt(x.cuota)+' · '+txtDepositos(x.n))}</div></div><div style="${neutro}">${escapeHtml(t)}</div></div>`;
     }));
   el.innerHTML=`<div class="deuda-person"><div class="deuda-header" onclick="toggleDeuda('d-papa-aporte')"><div><div class="deuda-name">papá · aportación</div><div class="deuda-sub">${escapeHtml(sub)}</div></div><div class="deuda-total ${cls}">${fmt(monto)}</div></div>`+
-    `<div class="deuda-detail${abierta?' open':''}" id="d-papa-aporte">${filas.join('')}<div class="item-meta" style="padding:8px 0;line-height:1.5">Se calcula solo con los ingresos registrados, desde ${escapeHtml(nombreMes(c.inicio))}, según lo cargado en este teléfono: si otro registró un depósito, recarguen. No entra al balance total: se arregla con los depósitos de papá. El monto se cambia en perfil.</div></div></div>`;
+    `<div class="deuda-detail${abierta?' open':''}" id="d-papa-aporte">${filas.join('')}<div class="item-meta" style="padding:8px 0;line-height:1.5">Se calcula con los ingresos marcados como de papá, desde ${escapeHtml(nombreMes(c.inicio))}, según lo cargado en este teléfono: si otro registró un depósito, recarguen. No entra al balance total: se arregla con los depósitos de papá. El monto se cambia en perfil.</div></div></div>`;
 }
 // Perfil: historial de montos; rellenar=true pone en los campos el monto vigente y el mes actual
 function renderAporte(rellenar){
@@ -3506,7 +3586,9 @@ function renderAporte(rellenar){
     return;
   }
   const c=cuentaPapa();
-  hist.innerHTML='<div class="item-meta" style="margin:12px 0 4px">la cuenta se lleva desde '+escapeHtml(nombreMes(c?c.inicio:(state.aporteInicio||state.aportes[0].desde)))+
+  const est=c?estadoPapa(c):null;
+  hist.innerHTML=(est?'<div class="item-row"><div><div class="item-cat">cómo van</div><div class="item-meta">'+escapeHtml(est.sub)+'</div></div><div style="font-weight:600;white-space:nowrap">'+fmt(est.monto)+'</div></div>':'')+
+    '<div class="item-meta" style="margin:12px 0 4px">la cuenta se lleva desde '+escapeHtml(nombreMes(c?c.inicio:(state.aporteInicio||state.aportes[0].desde)))+
     ' · <button type="button" class="del-btn" style="font-size:12px;color:var(--accent);padding:2px 0" onclick="cambiarInicioAporte()">empezar en el mes escrito arriba</button></div>'+
     state.aportes.slice().reverse().map(a=>`<div class="item-row"><div><div class="item-cat">desde ${escapeHtml(nombreMes(a.desde))}</div></div><div style="font-weight:600;white-space:nowrap">${fmt(a.monto)}</div></div>`).join('');
 }

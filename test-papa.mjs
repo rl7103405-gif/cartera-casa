@@ -52,4 +52,11 @@ st={aportes:[{desde:'2026-09',monto:100}],aporteInicio:'2026-09',ingresos:[ing('
 c=hacer(st,'2026-10-10T12:00:00').cuentaPapa(); eq('crédito restante 160', c.deMas, 160);
 // 11) meses antes de 2020 se descartan
 eq('antes de 2020 fuera', hacer({aportes:[],ingresos:[]},'2026-10-10T12:00:00').saneaAportes([{desde:'0001-01',monto:5},{desde:'2019-12',monto:5},{desde:'2020-01',monto:5}]), [{desde:'2020-01',monto:5}]);
+// 12) solo cuenta el dinero de papá: true o ausente cuentan; false y valores raros no
+st={aportes:[{desde:'2026-09',monto:1000}],aporteInicio:'2026-09',ingresos:[
+  ing('2026-09-05',400,{dePapa:true}), ing('2026-09-06',300), ing('2026-09-07',5000,{dePapa:false}),
+  ing('2026-09-08',70,{dePapa:'false'}), ing('2026-09-09',80,{dePapa:null})]};
+c=hacer(st,'2026-10-10T12:00:00').cuentaPapa();
+eq('solo de papá: 400+300', [c.meses[0].dado, c.meses[0].n], [700,2]);
+eq('faltan 300 de septiembre', c.arrastre, -300);
 console.log(`total ${ok}/${ok+mal}`);
