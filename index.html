@@ -686,6 +686,14 @@ table.mini th:first-child,table.mini td:first-child{text-align:left}
   <div class="sec">
     <div class="section-title">cómo maneja el dinero la casa</div>
     <div class="panel" id="score-panel"><div class="empty-state">calculando...</div></div>
+    <div class="section-title mt" id="aporte-titulo">aportación de papá</div>
+    <div class="panel">
+      <div class="field"><label>cuánto le toca al mes</label><input type="number" id="aporte-monto" placeholder="ej. 54000" step="0.01" inputmode="decimal"></div>
+      <div class="field"><label>desde qué mes (AAAA-MM)</label><input type="text" id="aporte-desde" placeholder="ej. 2026-09" inputmode="numeric" maxlength="7" autocomplete="off"></div>
+      <div class="item-meta" style="line-height:1.5">El monto aplica al mes completo. Si el número estaba mal, guárdenlo con el mes desde el que estaba mal y todo se recalcula. Lo que papá dé de más o de menos en un mes se descuenta o se suma al siguiente; lo ven en deudas.</div>
+      <button type="button" class="btn" id="aporte-btn" onclick="guardarAporte()">guardar</button>
+      <div id="aporte-historial"></div>
+    </div>
   </div>
   <div class="sec">
     <div class="section-title">la referencia de la casa</div>
@@ -745,6 +753,7 @@ table.mini th:first-child,table.mini td:first-child{text-align:left}
       <div class="amount" id="deuda-grand-total">$—</div>
       <div style="font-size:12px;color:var(--muted);margin-top:4px" id="deuda-grand-sub">—</div>
     </div>
+    <div id="papa-deuda"></div>
     <div id="personas-container"></div>
     <div class="section-title">registrar movimiento</div>
     <div class="panel">
@@ -1107,6 +1116,8 @@ let state = {
   // meta de ahorro del hogar (doc casa/metas). monto 0 = todavia no la definen
   meta:{monto:0, fecha:META_FECHA_DEFAULT},
   aporteMensual:APORTE_MENSUAL_DEFAULT,
+  // historial del monto de papá [{desde:'AAAA-MM', monto}] y primer mes que se cuenta
+  aportes:[], aporteInicio:'',
   // perfil DEL HOGAR: nombre de la casa, cuantos viven en ella, si se paga renta y la foto.
   // vivienda es el unico campo con efecto real (alimenta estandarDe); vacio = estandar generico
   perfil:{nombre:'', habitantes:0, vivienda:'', foto:''},
@@ -1317,7 +1328,7 @@ async function loadFromFirebase() {
       state.meta={
         monto:(Number.isFinite(md.monto)&&md.monto>0)?md.monto:0,
         fecha:(typeof md.fecha==='string'&&fechaCalendarioValida(md.fecha))?md.fecha:META_FECHA_DEFAULT};
-      if(Number.isFinite(md.aporteMensual)&&md.aporteMensual>=0) state.aporteMensual=md.aporteMensual;
+      aplicarAportes(md);
     }
     if (tDoc.exists()) { state.tarjetaDeuda = Number.isFinite(tDoc.data().deuda) ? tDoc.data().deuda : state.tarjetaDeuda; state.tarjetaMovimientos = Array.isArray(tDoc.data().movimientos) ? tDoc.data().movimientos : []; }
     if (hDoc.exists()) state.snapshots = Array.isArray(hDoc.data().snapshots) ? hDoc.data().snapshots : [];
@@ -1389,6 +1400,13 @@ function suscribirEnVivo() {
     }, err=>{ console.error('onSnapshot',err); setSyncDot('err'); });
     unsubs.push(u);
   });
+  // monto de papá: si otro teléfono lo cambia, Inicio y Deudas se recalculan al momento
+  unsubs.push(onSnapshot(doc(db,NS,'metas'), snap=>{
+    if(!datosCargados) return;
+    if(!snap.exists()&&snap.metadata.fromCache) return; // sin señal: no borrar lo que ya se sabe
+    try { aplicarAportes(snap.exists()?(snap.data()||{}):{}); refrescar(renderPapa, ()=>renderAporte(false)); }
+    catch(e) { console.error('snapshot metas',e); }
+  }, err=>{ console.error('onSnapshot metas',err); setSyncDot('err'); }));
 }
 function desuscribir() { unsubs.forEach(u=>{ try{ u(); }catch(e){} }); unsubs=[]; }
 
@@ -1998,7 +2016,7 @@ window.showPage = function(p) {
   if(p==='resumen') renderResumen();
   if(p==='movimientos'){ renderMovimientos(); if(movSubActual==='sus') renderSuscripciones(); }
   if(p==='deudas') renderDeudas();
-  if(p==='perfil'){ renderPerfil(); renderScore(); }
+  if(p==='perfil'){ renderPerfil(); renderScore(); renderAporte(true); }
 };
 window.togglePrivado = function() {
   modoPrivado=!modoPrivado;
@@ -2076,7 +2094,7 @@ function actualizarOjo() {
 }
 // re-renderiza TODAS las paginas (tambien las inactivas, para no dejar montos viejos en el DOM)
 function rerenderTodo() {
-  render(); renderTransferencias(); renderMovimientos(); renderDeudas(); renderResumen();
+  render(); renderTransferencias(); renderMovimientos(); renderDeudas(); renderResumen(); renderAporte(false);
 }
 // detalle por cuenta: al tocar una tarjeta de inicio se listan sus movimientos del ultimo
 // mes (gastos, ingresos y transferencias; excluye pendientes/rechazados del atajo)
@@ -3193,6 +3211,7 @@ window.exportarMisDatos = function() {
     const datos={
       exportado:new Date().toISOString(),
       perfil:state.perfil, meta:state.meta, saldos:saldosPayload(),
+      aportePapa:{mensual:state.aporteMensual, aportes:state.aportes, inicio:state.aporteInicio},
       tarjeta:{deuda:state.tarjetaDeuda,movimientos:state.tarjetaMovimientos},
       gastos:state.gastos, ingresos:state.ingresos, transferencias:state.transferencias,
       personas:state.personas,
@@ -3335,65 +3354,227 @@ window.editarMeta = async function() {
   }finally{ metaGuardando=false; }
 };
 
-// ── LO QUE APORTA PAPA ESTE MES ───────────────────────────────
-// Es de donde entra el dinero de la casa: cada ingreso registrado en el mes descuenta
-// de la aportacion acordada. Se cuentan TODOS los ingresos del mes (hoy no hay otra
-// fuente); por eso el panel dice de cuantos movimientos sale, para que se note si
-// alguien registro algo que no venia de papa.
+// ── LO QUE APORTA PAPA ────────────────────────────────────────
+// Es de donde entra el dinero de la casa: se cuentan TODOS los ingresos del mes (hoy papá
+// es la única fuente); por eso cada mes dice de cuántos depósitos sale, para que se note si
+// alguien registró algo que no venía de él.
+// 30-sep-2026: el monto tiene HISTORIAL (casa/metas.aportes = [{desde:'AAAA-MM', monto}]; el
+// de cada mes es la última entrada con desde <= mes) y lo que papá da de más o de menos en
+// un mes cerrado se ARRASTRA al siguiente. El arrastre se CALCULA con los ingresos, nunca se
+// escribe: si se edita o borra un ingreso se corrige solo, y tres teléfonos no pueden
+// duplicarlo. aporteInicio = primer mes que se cuenta (antes de él, saldo en cero).
+// aporteMensual queda como espejo del monto vigente para versiones viejas; si no coincide,
+// manda el historial y se avisa. Revisado con Codex (dos rondas).
+const RE_MES=/^\d{4}-(0[1-9]|1[0-2])$/;
+const mesKey=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+const nombreMes=k=>{ const [y,m]=k.split('-').map(Number); return MESES[m-1]+' '+y; };
+function saneaAportes(arr){
+  const porMes={};
+  (Array.isArray(arr)?arr:[]).forEach(a=>{
+    if(a&&typeof a.desde==='string'&&RE_MES.test(a.desde)&&a.desde>='2020-01'&&Number.isFinite(a.monto)&&a.monto>=0)
+      porMes[a.desde]=Math.round(a.monto*100)/100;
+  });
+  return Object.keys(porMes).sort().map(desde=>({desde,monto:porMes[desde]}));
+}
+function aplicarAportes(md){
+  if(Number.isFinite(md.aporteMensual)&&md.aporteMensual>=0) state.aporteMensual=md.aporteMensual;
+  state.aportes=saneaAportes(md.aportes);
+  state.aporteInicio=(typeof md.aporteInicio==='string'&&RE_MES.test(md.aporteInicio)&&md.aporteInicio>='2020-01')?md.aporteInicio:'';
+}
+function cuotaDe(k){ let c=null; for(const a of state.aportes){ if(a.desde<=k) c=a.monto; else break; } return c; }
+// fecha de un ingreso en ms: una AAAA-MM-DD pelada se toma como día LOCAL (msFechaMov la leería como UTC)
+const msIngreso=f=>(typeof f==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(f))?parseFechaLocal(f).getTime():msFechaMov(f);
+function recibidoEnMes(y,m){
+  const ini=new Date(y,m,1).getTime(), fin=new Date(y,m+1,1).getTime();
+  let c=0,n=0;
+  state.ingresos.forEach(i=>{
+    if(!movValido(i)||movSinEfecto(i)) return;
+    const t=msIngreso(i.fecha);
+    if(t!==null&&t>=ini&&t<fin){ c+=Math.round(i.monto*100); n++; }
+  });
+  return {dado:c/100,n};
+}
+// función pura sobre state (todo en centavos): la usan Inicio y Deudas. null = sin historial
+function cuentaPapa(){
+  if(!state.aportes.length) return null;
+  const hoy=new Date(), actual=mesKey(hoy);
+  let inicio=state.aporteInicio||state.aportes[0].desde;
+  if(inicio<state.aportes[0].desde) inicio=state.aportes[0].desde; // sin cuota no se puede contar
+  if(inicio>actual) return null;                                    // no se guardan meses futuros
+  const meses=[]; let arrC=0;                                       // + = dio de más
+  let [y,m]=inicio.split('-').map(Number); m-=1;
+  while(mesKey(new Date(y,m,1))<actual){
+    const k=mesKey(new Date(y,m,1)), cuota=cuotaDe(k), r=recibidoEnMes(y,m);
+    const dif=Math.round(r.dado*100)-Math.round(cuota*100);
+    arrC+=dif; meses.push({k,cuota,dado:r.dado,n:r.n,dif:dif/100});
+    m++; if(m>11){ m=0; y++; }
+  }
+  const cuota=cuotaDe(actual), r=recibidoEnMes(hoy.getFullYear(),hoy.getMonth());
+  const tocaC=Math.round(cuota*100)-arrC, dadoC=Math.round(r.dado*100);
+  return {inicio,actual,meses,arrastre:arrC/100,cuota,dado:r.dado,n:r.n,leToca:tocaC/100,
+    pendiente:Math.max(0,tocaC-dadoC)/100, deMas:Math.max(0,dadoC-tocaC)/100}; // deMas = lo que pasa a favor al mes siguiente
+}
+const txtDepositos=n=>n+(n===1?' depósito':' depósitos');
 function renderPapa() {
   const el=document.getElementById('papa-panel'); if(!el) return;
-  const meta=Number.isFinite(state.aporteMensual)?state.aporteMensual:APORTE_MENSUAL_DEFAULT;
-  const hoy=new Date();
-  const ini=new Date(hoy.getFullYear(),hoy.getMonth(),1);
+  renderPapaDeuda();
+  // la copia local no trae casa/metas: hasta que el servidor confirme no se sabe el monto real
+  if(!datosCargados){ el.innerHTML='<div class="empty-state">calculando...</div>'; return; }
+  const hoy=new Date(), mesTxt=MESES[hoy.getMonth()];
   const fin=new Date(hoy.getFullYear(),hoy.getMonth()+1,1);
-  const delMes=state.ingresos.filter(i=>{
-    if(!movValido(i)||movSinEfecto(i)) return false;
-    const t=msFechaMov(i.fecha);
-    return t!==null&&t>=ini.getTime()&&t<fin.getTime();
-  });
-  const dado=delMes.reduce((a,i)=>a+(Number.isFinite(i.monto)?i.monto:0),0);
-  const mesTxt=MESES[hoy.getMonth()];
-  const btn='<button type="button" class="del-btn" style="font-size:12px;color:var(--accent);padding:2px 0 2px 10px" onclick="editarAporte()">cambiar monto</button>';
-  if(meta<=0){
-    el.innerHTML='<div class="empty-state">no hay un monto acordado — define cuánto toca al mes</div>'+
-      '<div style="text-align:right">'+btn+'</div>';
-    return;
-  }
-  const falta=Math.max(0,meta-dado), pct=meta>0?dado/meta*100:0;
   // dias que quedan del mes, contando hoy
   const diasRest=Math.round((fin.getTime()-new Date(hoy.getFullYear(),hoy.getMonth(),hoy.getDate()).getTime())/86400000);
+  const btn='<button type="button" class="del-btn" style="font-size:12px;color:var(--accent);padding:2px 0 2px 10px" onclick="editarAporte()">cambiar monto</button>';
+  const c=cuentaPapa();
+  const aviso=(c&&Number.isFinite(state.aporteMensual)&&Math.abs(state.aporteMensual-state.aportes[state.aportes.length-1].monto)>0.004)
+    ? '<div class="item-meta" style="margin-top:6px;color:var(--red)">alguien cambió el monto a '+fmt(state.aporteMensual)+' desde una versión vieja de la app. Aquí manda lo guardado en perfil: si ese es el bueno, guárdenlo ahí, y recarguen la app en los tres teléfonos.</div>'
+    : '';
+  let meta, dado, n, ajuste='';
+  if(c){
+    meta=c.leToca; dado=c.dado; n=c.n;
+    if(c.arrastre>0.004) ajuste='cuota '+fmt(c.cuota)+' − '+fmt(c.arrastre)+' que dio de más antes';
+    else if(c.arrastre<-0.004) ajuste='cuota '+fmt(c.cuota)+' + '+fmt(-c.arrastre)+' que faltó antes';
+  } else {
+    meta=Number.isFinite(state.aporteMensual)?state.aporteMensual:APORTE_MENSUAL_DEFAULT;
+    const r=recibidoEnMes(hoy.getFullYear(),hoy.getMonth()); dado=r.dado; n=r.n;
+  }
+  const detalle=n?(txtDepositos(n)+(n===1?' registrado':' registrados')+' en '+mesTxt):('sin depósitos registrados en '+mesTxt);
+  if(meta<=0){
+    el.innerHTML=(c
+      ? '<div class="item-meta">'+escapeHtml(mesTxt)+': este mes no le toca nada ('+escapeHtml(ajuste||('cuota '+fmt(c.cuota)))+')'+(dado>0?(' · ya dio '+fmt(dado)+', se pasa a favor del mes siguiente'):'')+'</div>'
+      : '<div class="empty-state">no hay un monto acordado — define cuánto toca al mes</div>')+
+      '<div style="text-align:right">'+btn+'</div>'+aviso;
+    return;
+  }
+  const falta=Math.max(0,meta-dado), pct=dado/meta*100;
   const pctTxt=pct.toFixed(1).replace(/\.0$/,'')+'%';
   const sub = falta>0
     ? ('lleva '+pctTxt+' · faltan '+fmt(falta)+' · quedan '+diasRest+(diasRest===1?' día':' días')+' de '+mesTxt)
-    : (dado>meta ? ('completo · '+pctTxt+' · '+fmt(dado-meta)+' de más') : 'completo · 100%');
-  const detalle = delMes.length
-    ? (delMes.length+(delMes.length===1?' depósito registrado':' depósitos registrados')+' en '+mesTxt)
-    : ('sin depósitos registrados en '+mesTxt);
+    : (dado>meta ? ('completo · '+pctTxt+' · '+fmt(dado-meta)+' de más'+(c?', se descuenta del mes que sigue':'')) : 'completo · 100%');
   el.innerHTML=
-    '<div class="resumen-bar"><div class="bar-header"><span class="bar-label">'+(falta>0?'':'')+escapeHtml(mesTxt)+'</span>'+
+    '<div class="resumen-bar"><div class="bar-header"><span class="bar-label">'+escapeHtml(mesTxt)+'</span>'+
       '<span><span class="bar-amt" style="color:var(--accent-dark)">'+fmt(dado)+' / '+fmt(meta)+' · '+pct.toFixed(0)+'%</span>'+btn+'</span></div>'+
     '<div class="bar-track" style="height:6px"><div class="bar-fill" style="width:'+Math.max(0,Math.min(100,pct)).toFixed(1)+'%"></div></div>'+
-    '<div class="item-meta" style="margin-top:4px">'+escapeHtml(sub)+' · '+escapeHtml(detalle)+'</div></div>';
+    '<div class="item-meta" style="margin-top:4px">'+escapeHtml([sub,ajuste,detalle].filter(Boolean).join(' · '))+'</div></div>'+aviso;
 }
-window.editarAporte = async function() {
-  if(!requiereQuien()) return;
-  const actual=Number.isFinite(state.aporteMensual)?state.aporteMensual:APORTE_MENSUAL_DEFAULT;
-  const raw=prompt('Cuánto le toca aportar al mes? (0 para quitar el seguimiento)',String(actual));
-  if(raw===null) return;
-  const t=raw.trim();
-  if(t!==''&&!/^[0-9]+(\.[0-9]{1,2})?$/.test(t)){ showToast('monto no válido'); return; }
-  const monto=t===''?0:Math.round(parseFloat(t)*100)/100;
-  if(!Number.isFinite(monto)||monto<0){ showToast('monto no válido'); return; }
-  try{
-    if(!datosCargados) throw new Error('datos no cargados');
-    await setDoc(doc(db,NS,'metas'),{aporteMensual:monto},{merge:true});
-    state.aporteMensual=monto;
-    setSyncDot('ok'); renderPapa();
-    showToast('aportación mensual actualizada');
-  }catch(e){
-    console.error('editarAporte',e); setSyncDot('err');
-    showToast('no se pudo guardar — revisa tu conexión');
+// Deudas: tarjeta DERIVADA de solo lectura (no es una persona de casa/personas ni entra al
+// balance total: se arregla con los depósitos de papá del mes que sigue)
+function renderPapaDeuda(){
+  const el=document.getElementById('papa-deuda'); if(!el) return;
+  const c=datosCargados?cuentaPapa():null;
+  if(!c){ el.innerHTML=''; return; }
+  const abierta=!!document.querySelector('#d-papa-aporte.open');
+  const a=c.arrastre, mesAct=nombreMes(c.actual);
+  const [yA,mA]=c.actual.split('-').map(Number), mesSig=nombreMes(mesKey(new Date(yA,mA,1)));
+  // el encabezado dice cómo están HOY, no solo lo arrastrado: un faltante que papá ya cubrió
+  // este mes no se sigue mostrando como deuda (lo depositado cubre primero lo atrasado)
+  const atrasado=a<-0.004?Math.max(0,Math.round((-a-c.dado)*100)/100):0;
+  let sub, monto, cls;   // convención de deudas: pos = nos debe
+  if(c.deMas>0){ sub='va de más · se descuenta de '+mesSig; monto=c.deMas; cls='neg'; }
+  else if(atrasado>0){ sub='falta de meses pasados · se suma a '+mesAct; monto=atrasado; cls='pos'; }
+  else if(a>0.004){ sub='a favor · se descuenta de '+mesAct; monto=a; cls='neg'; }
+  else { sub='al corriente'; monto=0; cls='neg'; }
+  const neutro='font-size:13px;font-weight:600;white-space:nowrap;padding-left:8px';
+  const actual=['cuota '+fmt(c.cuota),
+    a>0.004?('viene '+fmt(a)+' a favor'):a<-0.004?('viene '+fmt(-a)+' que faltó'):'',
+    'le toca '+fmt(Math.max(0,c.leToca)),
+    'recibido '+fmt(c.dado)+' ('+txtDepositos(c.n)+')'].filter(Boolean).join(' · ');
+  const estado=c.pendiente>0?('faltan '+fmt(c.pendiente)):(c.deMas>0?('+'+fmt(c.deMas)+' de más'):'completo');
+  const filas=[`<div class="item-row"><div><div class="item-cat">${escapeHtml(mesAct)} · en curso</div><div class="item-meta">${escapeHtml(actual)}</div></div><div style="${neutro}">${escapeHtml(estado)}</div></div>`]
+    .concat(c.meses.slice().reverse().map(x=>{
+      const t=x.dif>0.004?('+'+fmt(x.dif)+' de más'):x.dif<-0.004?('−'+fmt(-x.dif)+' faltó'):'exacto';
+      return `<div class="item-row"><div><div class="item-cat">${escapeHtml(nombreMes(x.k))}</div><div class="item-meta">${escapeHtml('dio '+fmt(x.dado)+' de '+fmt(x.cuota)+' · '+txtDepositos(x.n))}</div></div><div style="${neutro}">${escapeHtml(t)}</div></div>`;
+    }));
+  el.innerHTML=`<div class="deuda-person"><div class="deuda-header" onclick="toggleDeuda('d-papa-aporte')"><div><div class="deuda-name">papá · aportación</div><div class="deuda-sub">${escapeHtml(sub)}</div></div><div class="deuda-total ${cls}">${fmt(monto)}</div></div>`+
+    `<div class="deuda-detail${abierta?' open':''}" id="d-papa-aporte">${filas.join('')}<div class="item-meta" style="padding:8px 0;line-height:1.5">Se calcula solo con los ingresos registrados, desde ${escapeHtml(nombreMes(c.inicio))}, según lo cargado en este teléfono: si otro registró un depósito, recarguen. No entra al balance total: se arregla con los depósitos de papá. El monto se cambia en perfil.</div></div></div>`;
+}
+// Perfil: historial de montos; rellenar=true pone en los campos el monto vigente y el mes actual
+function renderAporte(rellenar){
+  const hist=document.getElementById('aporte-historial'); if(!hist) return;
+  // el ojo de privacidad puede activarse con el Perfil abierto: el campo tampoco enseña el monto
+  if(modoPrivado){ const i=document.getElementById('aporte-monto'); i.value=''; i.placeholder='oculto en modo privado'; }
+  if(!datosCargados){ hist.innerHTML=''; return; }
+  if(rellenar){
+    const k=mesKey(new Date()), cuota=cuotaDe(k);
+    const inp=document.getElementById('aporte-monto');
+    inp.value=modoPrivado?'':String(cuota!==null?cuota:(Number.isFinite(state.aporteMensual)?state.aporteMensual:APORTE_MENSUAL_DEFAULT));
+    inp.placeholder=modoPrivado?'oculto en modo privado':'ej. 54000';
+    document.getElementById('aporte-desde').value=k;
   }
+  if(!state.aportes.length){
+    hist.innerHTML='<div class="item-meta" style="margin-top:12px;line-height:1.5">Hoy se usan '+fmt(Number.isFinite(state.aporteMensual)?state.aporteMensual:APORTE_MENSUAL_DEFAULT)+' al mes y cada mes arranca de cero. Al guardar, la cuenta de lo que sobra o falta empieza a llevarse desde el mes que pongan.</div>';
+    return;
+  }
+  const c=cuentaPapa();
+  hist.innerHTML='<div class="item-meta" style="margin:12px 0 4px">la cuenta se lleva desde '+escapeHtml(nombreMes(c?c.inicio:(state.aporteInicio||state.aportes[0].desde)))+
+    ' · <button type="button" class="del-btn" style="font-size:12px;color:var(--accent);padding:2px 0" onclick="cambiarInicioAporte()">empezar en el mes escrito arriba</button></div>'+
+    state.aportes.slice().reverse().map(a=>`<div class="item-row"><div><div class="item-cat">desde ${escapeHtml(nombreMes(a.desde))}</div></div><div style="font-weight:600;white-space:nowrap">${fmt(a.monto)}</div></div>`).join('');
+}
+// el botón "cambiar monto" de Inicio ya no usa prompt(): lleva a la sección del perfil
+window.editarAporte = function() {
+  window.showPage('perfil');
+  setTimeout(()=>{
+    document.getElementById('aporte-titulo')?.scrollIntoView({block:'start',behavior:'smooth'});
+    document.getElementById('aporte-monto')?.focus({preventScroll:true});
+  },60);
+};
+let aporteGuardando=false;
+window.guardarAporte = async function() {
+  if(aporteGuardando) return;
+  if(!requiereQuien()) return;
+  if(!datosCargados){ showToast(msgFalloDinero()); return; }
+  const tMonto=document.getElementById('aporte-monto').value.trim();
+  const desde=document.getElementById('aporte-desde').value.trim();
+  if(!/^[0-9]+(\.[0-9]{1,2})?$/.test(tMonto)){ showToast('monto no válido'); return; }
+  const monto=Math.round(parseFloat(tMonto)*100)/100;
+  if(!Number.isFinite(monto)||monto<0){ showToast('monto no válido'); return; }
+  if(!RE_MES.test(desde)||desde<'2020-01'){ showToast('mes no válido: usa AAAA-MM, por ejemplo '+mesKey(new Date())); return; }
+  if(desde>mesKey(new Date())){ showToast('solo meses que ya empezaron'); return; }
+  const btn=document.getElementById('aporte-btn');
+  aporteGuardando=true; if(btn) btn.disabled=true;
+  try{
+    const ref=doc(db,NS,'metas');
+    // transacción: se relee el historial de la nube para no pisar lo que guardó otro teléfono
+    const res=await runTransaction(db, async tx=>{
+      const snap=await tx.get(ref);
+      const md=snap.exists()?(snap.data()||{}):{};
+      const lista=saneaAportes(md.aportes).filter(a=>a.desde!==desde);
+      lista.push({desde,monto}); lista.sort((x,y)=>x.desde<y.desde?-1:1);
+      // el primer guardado fija desde cuándo se lleva la cuenta; los siguientes no lo mueven
+      const inicio=(typeof md.aporteInicio==='string'&&RE_MES.test(md.aporteInicio))?md.aporteInicio:desde;
+      const vigente=lista[lista.length-1].monto;
+      tx.set(ref,{aportes:lista,aporteInicio:inicio,aporteMensual:vigente},{merge:true});
+      return {lista,inicio,vigente};
+    });
+    state.aportes=res.lista; state.aporteInicio=res.inicio; state.aporteMensual=res.vigente;
+    setSyncDot('ok'); refrescar(renderPapa, ()=>renderAporte(false));
+    showToast(desde<res.inicio
+      ? ('guardado, pero la cuenta se lleva desde '+nombreMes(res.inicio)+': para contar desde antes, usa «empezar en el mes escrito arriba»')
+      : ('aportación: '+fmt(monto)+' desde '+nombreMes(desde)));
+  }catch(e){
+    console.error('guardarAporte',e); setSyncDot('err');
+    showToast('no se pudo guardar — revisa tu conexión');
+  }finally{ aporteGuardando=false; if(btn) btn.disabled=false; }
+};
+
+window.cambiarInicioAporte = async function() {
+  if(aporteGuardando) return;
+  if(!requiereQuien()) return;
+  if(!datosCargados){ showToast(msgFalloDinero()); return; }
+  const desde=document.getElementById('aporte-desde').value.trim();
+  if(!RE_MES.test(desde)||desde<'2020-01'){ showToast('escribe arriba el mes, AAAA-MM, por ejemplo '+mesKey(new Date())); return; }
+  if(desde>mesKey(new Date())){ showToast('solo meses que ya empezaron'); return; }
+  if(state.aportes.length&&desde<state.aportes[0].desde){ showToast('antes de '+nombreMes(state.aportes[0].desde)+' no hay monto guardado: guarda primero el monto de ese mes'); return; }
+  aporteGuardando=true;
+  try{
+    await setDoc(doc(db,NS,'metas'),{aporteInicio:desde},{merge:true});
+    state.aporteInicio=desde;
+    setSyncDot('ok'); refrescar(renderPapa, ()=>renderAporte(false));
+    showToast('la cuenta se lleva desde '+nombreMes(desde));
+  }catch(e){
+    console.error('cambiarInicioAporte',e); setSyncDot('err');
+    showToast('no se pudo guardar — revisa tu conexión');
+  }finally{ aporteGuardando=false; }
 };
 
 // ── APARTADOS (metas del hogar: contadores visuales, no tocan cuentas) ──

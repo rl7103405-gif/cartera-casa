@@ -59,3 +59,22 @@ Ver `README.md` para el paso a paso completo.
 4. Validar siempre lo que viene de Firestore (`Number.isFinite`, arrays, regex) — un dato
    corrupto no debe romper la app ni propagar `NaN` a los saldos.
 5. Escapar con `escapeHtml()` cualquier texto del usuario que se interpole en HTML.
+
+## Aportación de papá (cartera de la casa, 30/09/2026)
+
+- **El monto se edita en Perfil** (sección "aportación de papá", `guardarAporte`, sin `prompt()`).
+  Guarda historial en `casa/metas`:
+  - `aportes = [{desde:'AAAA-MM', monto}]`: la cuota de un mes es la última entrada con
+    `desde <= mes`. No se aceptan meses futuros.
+  - `aporteInicio`: el primer mes que se cuenta. Se corrige con `cambiarInicioAporte`.
+  - `aporteMensual`: espejo del monto vigente para versiones viejas. Si no coincide, Inicio avisa
+    y manda el historial.
+- **El arrastre se CALCULA; nunca se escribe.** Lo que papá da de más o de menos en un mes cerrado
+  pasa al siguiente. Lo hace `cuentaPapa()`, en centavos, con TODOS los ingresos válidos del mes,
+  porque hoy papá es la única fuente de dinero de la casa. Si se edita o borra un ingreso, se
+  corrige solo, y tres teléfonos no pueden duplicarlo.
+- **Deudas:** tarjeta derivada de solo lectura (`renderPapaDeuda`, en `#papa-deuda`). **No entra al
+  balance total.**
+- **Limitación aceptada:** los ingresos no se sincronizan en vivo entre teléfonos (límite de
+  lecturas). La tarjeta pide recargar.
+- **Pruebas:** `node test-papa.mjs`, 21 casos contra las funciones reales del `index.html`.
