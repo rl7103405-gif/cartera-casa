@@ -3,7 +3,7 @@
 import fs from 'fs';
 const html=fs.readFileSync(new URL('./index.html', import.meta.url),'utf8');
 const tomar=(ini,fin)=>{ const a=html.indexOf(ini), b=html.indexOf(fin,a); if(a<0||b<0) throw new Error('no '+ini); return html.slice(a,b); };
-const bloque=tomar('const RE_MES=','const txtDepositos=');
+const bloque=tomar('const CAT_PAPA =','const CATS_INGRESO_DEFAULT')+tomar('const normCatTxt =','// "Mes papá" siempre primero')+tomar('const RE_MES=','const txtDepositos=');
 const extra=['function parseFechaLocal','function msFechaMov','function movSinEfecto','function movValido'].map(n=>{ const a=html.indexOf(n); let d=0,i=html.indexOf('{',a); for(;i<html.length;i++){ if(html[i]==='{')d++; else if(html[i]==='}'){d--; if(!d)break;} } return html.slice(a,i+1); }).join('\n');
 const MESES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 let ok=0,mal=0; const eq=(n,a,b)=>{ const p=JSON.stringify(a)===JSON.stringify(b); p?ok++:mal++; console.log((p?'✅':'❌')+' '+n+(p?'':'  obtuve '+JSON.stringify(a)+' esperaba '+JSON.stringify(b))); };
@@ -52,11 +52,12 @@ st={aportes:[{desde:'2026-09',monto:100}],aporteInicio:'2026-09',ingresos:[ing('
 c=hacer(st,'2026-10-10T12:00:00').cuentaPapa(); eq('crédito restante 160', c.deMas, 160);
 // 11) meses antes de 2020 se descartan
 eq('antes de 2020 fuera', hacer({aportes:[],ingresos:[]},'2026-10-10T12:00:00').saneaAportes([{desde:'0001-01',monto:5},{desde:'2019-12',monto:5},{desde:'2020-01',monto:5}]), [{desde:'2020-01',monto:5}]);
-// 12) solo cuenta el dinero de papá: true o ausente cuentan; false y valores raros no
+// 12) solo cuenta "Mes papá" (con o sin acento/mayúsculas) y los ingresos de antes del campo dePapa
 st={aportes:[{desde:'2026-09',monto:1000}],aporteInicio:'2026-09',ingresos:[
-  ing('2026-09-05',400,{dePapa:true}), ing('2026-09-06',300), ing('2026-09-07',5000,{dePapa:false}),
-  ing('2026-09-08',70,{dePapa:'false'}), ing('2026-09-09',80,{dePapa:null})]};
+  ing('2026-09-05',400,{cat:'Mes papá',dePapa:true}), ing('2026-09-06',300,{cat:'Otros'}),
+  ing('2026-09-07',5000,{cat:'Renta cuarto',dePapa:false}), ing('2026-09-08',70,{cat:'Otros',dePapa:'false'}),
+  ing('2026-09-09',20,{cat:'MES PAPA',dePapa:false})]};
 c=hacer(st,'2026-10-10T12:00:00').cuentaPapa();
-eq('solo de papá: 400+300', [c.meses[0].dado, c.meses[0].n], [700,2]);
-eq('faltan 300 de septiembre', c.arrastre, -300);
+eq('Mes papá + anterior + MES PAPA', [c.meses[0].dado, c.meses[0].n], [720,3]);
+eq('faltan 280', c.arrastre, -280);
 console.log(`total ${ok}/${ok+mal}`);

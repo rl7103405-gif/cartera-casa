@@ -77,9 +77,15 @@ Ver `README.md` para el paso a paso completo.
   balance total.**
 - **Limitación aceptada:** los ingresos no se sincronizan en vivo entre teléfonos (límite de
   lecturas). La tarjeta pide recargar.
-- **Solo cuenta el dinero de papá:** cada ingreso lleva `dePapa`. El alta y el lápiz tienen el toggle
-  "¿es dinero de papá?". `esDePapa` = true o ausente: los ingresos de antes del 30/09 cuentan como
-  antes, y un valor raro no cuenta. Editar escribe `dePapa` SOLO si cambió.
+- **Solo cuenta el dinero de papá = categoría «Mes papá»** (`CAT_PAPA`, `catPapa`). Es la ÚNICA categoría
+  de ingreso por omisión. `esDePapa`: la categoría es «Mes papá», o `dePapa===true`, o el ingreso no
+  trae el campo (los anteriores al 30/09 cuentan como antes). El alta guarda `dePapa=catPapa(cat)`. El
+  lápiz solo manda los campos que cambiaron, y si cambia la categoría recalcula `dePapa`.
+- **Migración única de categorías de ingreso** (`migrarCatsIngreso`): la bandera `catsIngresoV2` vive
+  en `casa/metas`, NO en `categorias`, porque las versiones viejas reescriben `categorias` completo.
+- **Agregar categoría:** modal propio (`cat-back`, `guardarCatNueva`), sin `prompt()`, que devuelve null
+  en la PWA instalada. Suma con `arrayUnion`; ya no se reescribe la lista (`saveCategorias` se quitó).
+  **Todavía usan `prompt()`:** perfil de la casa, meta y apartados. Tienen el mismo riesgo.
 - **Movimientos, "quién registró los gastos":** sale por persona del periodo, con filtro que se
   conserva al cambiar de periodo. Las claves salen de `QUIENES`, nunca del dato. Clases `.qr-*`:
   `.quien-bar` ya existía y chocaban.
