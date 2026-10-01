@@ -333,8 +333,12 @@ table.mini th:first-child,table.mini td:first-child{text-align:left}
   #page-metas{max-width:1060px}
   #page-resumen{max-width:1080px}
   nav,.tabs{padding-left:32px;padding-right:32px}
-  .hero-grid{display:grid;grid-template-columns:1fr 1.1fr;gap:0 24px;align-items:center;margin-bottom:8px}
-  .cards{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;align-items:start;margin-bottom:28px}
+  /* 1-oct (Roberto): cuadros parejos — columnas iguales y, en cada fila, los paneles del mismo alto */
+  .hero-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 24px;align-items:stretch;margin-bottom:8px}
+  .hero-grid>.sec{display:flex;flex-direction:column}
+  .hero-grid>.sec>.panel{flex:1 1 auto}
+  .hero-grid>.total-section{align-self:center}
+  .cards{display:grid;grid-template-columns:repeat(2,1fr);gap:12px 24px;align-items:start;margin-bottom:28px} /* mismo canal que la rejilla de arriba: las orillas coinciden */
   .tarjeta-card{grid-column:1/-1;margin-bottom:0}
   .inicio-grid,.summary-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 20px;align-items:start}
   .sec{min-width:0}
@@ -449,7 +453,7 @@ table.mini th:first-child,table.mini td:first-child{text-align:left}
   <!-- COMO VAS ESTE MES: en escritorio llena el hueco bajo el panel de papa (1-oct, Roberto) -->
   <div class="sec">
     <div class="section-title">cómo vas este mes</div>
-    <div class="panel" id="inicio-coach" style="margin-bottom:20px"><div class="item-meta">calculando...</div></div>
+    <div class="panel" id="inicio-coach"><div class="item-meta">calculando...</div></div>
   </div>
   </div>
 
