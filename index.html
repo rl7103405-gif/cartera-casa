@@ -445,14 +445,18 @@ table.mini th:first-child,table.mini td:first-child{text-align:left}
     <div class="section-title">dónde está mi dinero</div>
     <div class="panel" id="distribucion-panel"><div class="empty-state">calculando...</div></div>
   </div>
+
+  <!-- COMO VAS ESTE MES: en escritorio llena el hueco bajo el panel de papa (1-oct, Roberto) -->
+  <div class="sec">
+    <div class="section-title">cómo vas este mes</div>
+    <div class="panel" id="inicio-coach" style="margin-bottom:20px"><div class="item-meta">calculando...</div></div>
+  </div>
   </div>
 
 
   <!-- pagos fijos del mes: el dia que toca, desde la madrugada (ver SUSCRIPCIONES) -->
   <div id="sus-avisos" hidden style="margin-bottom:14px"></div>
 
-  <div class="section-title">cómo vas este mes</div>
-  <div class="panel" id="inicio-coach" style="margin-bottom:20px"><div class="item-meta">calculando...</div></div>
 
   <details class="acc" style="margin-bottom:20px">
     <summary>
@@ -483,6 +487,16 @@ table.mini th:first-child,table.mini td:first-child{text-align:left}
     </div>
 
     <!-- TARJETA DE CREDITO BBVA -->
+    <div class="card" onclick="toggleCuenta('efectivo','cash-detail')">
+      <div class="card-header">
+        <div class="card-left"><div class="card-icon icon-cash"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="7" width="19" height="10" rx="2"/><circle cx="12" cy="12" r="2.6"/><path d="M6 12h.01M18 12h.01"/></svg></div>
+          <div><div class="card-name">efectivo</div><div class="card-sub">pesos en mano</div></div>
+        </div>
+        <div class="card-right"><div class="card-amount" id="cash-display">$—</div></div>
+      </div>
+      <div class="card-detail" id="cash-detail"><div id="movs-efectivo"></div></div>
+    </div>
+
     <div class="tarjeta-card" onclick="toggleDetail('tarjeta-detail')">
       <div class="t-label">crédito BBVA · deuda actual</div>
       <div class="t-amount" id="tarjeta-display">$—</div>
@@ -492,16 +506,6 @@ table.mini th:first-child,table.mini td:first-child{text-align:left}
         <div class="detail-row"><span class="detail-label" style="color:rgba(255,255,255,0.5)">días para corte</span><span class="detail-val" id="tarjeta-dias">—</span></div>
         <div class="detail-row"><span class="detail-label" style="color:rgba(255,255,255,0.5)">último movimiento</span><span class="detail-val" id="tarjeta-ultimo">—</span></div>
       </div>
-    </div>
-
-    <div class="card" onclick="toggleCuenta('efectivo','cash-detail')">
-      <div class="card-header">
-        <div class="card-left"><div class="card-icon icon-cash"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="7" width="19" height="10" rx="2"/><circle cx="12" cy="12" r="2.6"/><path d="M6 12h.01M18 12h.01"/></svg></div>
-          <div><div class="card-name">efectivo</div><div class="card-sub">pesos en mano</div></div>
-        </div>
-        <div class="card-right"><div class="card-amount" id="cash-display">$—</div></div>
-      </div>
-      <div class="card-detail" id="cash-detail"><div id="movs-efectivo"></div></div>
     </div>
   </div>
 
