@@ -12,18 +12,18 @@ const hacer=(state,hoyISO)=>{ const RealDate=Date; const fijo=new RealDate(hoyIS
   const f=new Function('state','MESES','Date', extra+'\n'+bloque+'\nreturn {cuentaPapa,saneaAportes,cuotaDe,recibidoEnMes};');
   return f(state,MESES,D); };
 const ing=(fecha,monto,extra={})=>({fecha,monto,...extra});
-// 1) caso de Roberto: septiembre dio 30 de más → octubre le toca 30 menos
-let st={aportes:[{desde:'2026-09',monto:54100}],aporteInicio:'2026-09',ingresos:[ing('2026-09-02T15:00:00.000Z',27000),ing('2026-09-16T15:00:00.000Z',27130)]};
+// 1) septiembre dio 30 de más (cifras inventadas) → octubre le toca 30 menos
+let st={aportes:[{desde:'2026-09',monto:10000}],aporteInicio:'2026-09',ingresos:[ing('2026-09-02T15:00:00.000Z',5000),ing('2026-09-16T15:00:00.000Z',5030)]};
 let c=hacer(st,'2026-10-05T12:00:00').cuentaPapa();
-eq('sep +30 → arrastre', c.arrastre, 30); eq('octubre le toca', c.leToca, 54070); eq('meses cerrados', c.meses.map(m=>[m.k,m.dif,m.n]), [['2026-09',30,2]]);
+eq('sep +30 → arrastre', c.arrastre, 30); eq('octubre le toca', c.leToca, 9970); eq('meses cerrados', c.meses.map(m=>[m.k,m.dif,m.n]), [['2026-09',30,2]]);
 // 2) mismo, visto el 30-sep (mes en curso): sin arrastre, deMas 30
 c=hacer(st,'2026-09-30T12:00:00').cuentaPapa();
 eq('30-sep: sin meses cerrados', c.meses.length, 0); eq('30-sep deMas', c.deMas, 30); eq('30-sep pendiente', c.pendiente, 0);
 // 3) faltante acumulado dos meses y cambio de monto en noviembre
-st={aportes:[{desde:'2026-09',monto:54000},{desde:'2026-11',monto:60000}],aporteInicio:'2026-09',ingresos:[ing('2026-09-10',53000),ing('2026-10-10',54500),ing('2026-11-03T18:00:00.000Z',10000)]};
+st={aportes:[{desde:'2026-09',monto:10000},{desde:'2026-11',monto:12000}],aporteInicio:'2026-09',ingresos:[ing('2026-09-10',9000),ing('2026-10-10',10500),ing('2026-11-03T18:00:00.000Z',2000)]};
 c=hacer(st,'2026-11-20T12:00:00').cuentaPapa();
-eq('arrastre −1000+500', c.arrastre, -500); eq('nov le toca 60000+500', c.leToca, 60500); eq('nov pendiente', c.pendiente, 50500);
-eq('cuota por mes', c.meses.map(m=>m.cuota), [54000,54000]);
+eq('arrastre −1000+500', c.arrastre, -500); eq('nov le toca 12000+500', c.leToca, 12500); eq('nov pendiente', c.pendiente, 10500);
+eq('cuota por mes', c.meses.map(m=>m.cuota), [10000,10000]);
 // 4) fecha pelada del día 1 cuenta en su mes (no en el anterior)
 st={aportes:[{desde:'2026-09',monto:100}],aporteInicio:'2026-09',ingresos:[ing('2026-10-01',100),ing('2026-09-30',100)]};
 c=hacer(st,'2026-11-02T12:00:00').cuentaPapa();

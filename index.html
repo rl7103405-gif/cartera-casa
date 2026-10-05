@@ -606,6 +606,7 @@ table.mini th:first-child,table.mini td:first-child{text-align:left}
     </div>
     <div class="field"><label>monto</label><input type="number" id="transfer-monto" placeholder="ej. 1000" step="0.01" inputmode="decimal"></div>
     <div class="field"><label>nota (opcional)</label><input type="text" id="transfer-nota" placeholder="ej. depósito en cajero"></div>
+    <div class="field"><label>fecha (YYYY-MM-DD, vacía = hoy)</label><input type="text" id="transfer-fecha" placeholder="hoy"></div>
     <button class="btn btn-purple" id="transfer-btn" onclick="registrarTransferencia()">transferir</button>
   </div>
   <div class="section-title">últimas transferencias</div>
@@ -624,6 +625,7 @@ table.mini th:first-child,table.mini td:first-child{text-align:left}
   <div class="panel">
     <div class="field"><label>monto</label><input type="number" id="tarjeta-cargo-monto" placeholder="ej. 300" step="0.01" inputmode="decimal"></div>
     <div class="field"><label>nota</label><input type="text" id="tarjeta-cargo-nota" placeholder="ej. spotify, gasolina..."></div>
+    <div class="field"><label>fecha (YYYY-MM-DD, vacía = hoy)</label><input type="text" id="tarjeta-fecha" placeholder="hoy"></div>
     <div class="field"><label>si pagas, el dinero sale de</label>
       <select id="tarjeta-pago-fuente">
         <option value="nu">débito BBVA</option>
@@ -676,6 +678,7 @@ table.mini th:first-child,table.mini td:first-child{text-align:left}
       </div>
       <div class="field"><label>monto</label><input type="number" id="gasto-monto" placeholder="ej. 150" step="1" inputmode="decimal"></div>
       <div class="field"><label>nota (opcional)</label><input type="text" id="gasto-nota" placeholder="ej. taquería"></div>
+      <div class="field"><label>fecha (YYYY-MM-DD, vacía = hoy)</label><input type="text" id="gasto-fecha" placeholder="hoy"></div>
       <div class="field"><label>pagado con</label>
         <div class="type-toggle" id="gasto-fuente-toggle">
           <div class="type-opt active" onclick="setFuente('efectivo')">efectivo</div>
@@ -693,6 +696,7 @@ table.mini th:first-child,table.mini td:first-child{text-align:left}
       </div>
       <div class="field"><label>monto</label><input type="number" id="ingreso-monto" placeholder="ej. 5000" step="1" inputmode="decimal"></div>
       <div class="field"><label>nota (opcional)</label><input type="text" id="ingreso-nota" placeholder="ej. pago proyecto"></div>
+      <div class="field"><label>fecha (YYYY-MM-DD, vacía = hoy)</label><input type="text" id="ingreso-fecha" placeholder="hoy"></div>
       <div class="field"><label>entra a</label>
         <div class="type-toggle" id="ingreso-destino-toggle">
           <div class="type-opt active" onclick="setDestinoIngreso('efectivo')">efectivo</div>
@@ -854,6 +858,7 @@ table.mini th:first-child,table.mini td:first-child{text-align:left}
       </div>
       <div class="field"><label>monto</label><input type="number" id="deuda-monto" placeholder="ej. 500" step="0.01" inputmode="decimal"></div>
       <div class="field"><label>nota (opcional)</label><input type="text" id="deuda-nota" placeholder="ej. licencia, medicina..."></div>
+      <div class="field"><label>fecha (YYYY-MM-DD, vacía = hoy)</label><input type="text" id="deuda-fecha" placeholder="hoy"></div>
       <button class="btn btn-purple" id="deuda-btn" onclick="registrarDeuda()">registrar</button>
     </div>
   </div>
@@ -1606,9 +1611,13 @@ async function loadFromFirebase() {
       if (Array.isArray(cd.catsGasto) && cd.catsGasto.length) state.catsGasto = cd.catsGasto;
       if (Array.isArray(cd.catsIngreso) && cd.catsIngreso.length) state.catsIngreso = conCatPapa(cd.catsIngreso);
     }
-    state.gastos = gSnap.docs.map(d => ({id:d.id, ...d.data()}));
-    state.ingresos = iSnap.docs.map(d => ({id:d.id, ...d.data()}));
-    state.transferencias = trSnap.docs.map(d => ({id:d.id, ...d.data()}));
+    // Firestore no garantiza el orden relativo de docs con la misma fecha exacta
+    // (retrofechados al mismo dia): se reordena localmente con el mismo criterio
+    // de insertarPorFecha (fecha|creado desc) para que el mas nuevo quede arriba.
+    const ordFecha=(a,b)=>(String(b.fecha||'')+'|'+String(b.creado||'')).localeCompare(String(a.fecha||'')+'|'+String(a.creado||''));
+    state.gastos = gSnap.docs.map(d => ({id:d.id, ...d.data()})).sort(ordFecha);
+    state.ingresos = iSnap.docs.map(d => ({id:d.id, ...d.data()})).sort(ordFecha);
+    state.transferencias = trSnap.docs.map(d => ({id:d.id, ...d.data()})).sort(ordFecha);
     setSyncDot('ok');
     datosCargados = true;
     suscribirEnVivo();
@@ -2461,6 +2470,27 @@ window.setTipoDeuda = t => { state.tipoDeuda=t; ['cargo','pago','debo','pague'].
 // ── CALCS ─────────────────────────────────────────────────────
 function parseFechaLocal(f) { return new Date(f+'T00:00:00'); } // evita que YYYY-MM-DD se lea como UTC
 // valida que YYYY-MM-DD sea un dia de calendario real (rechaza p.ej. 2026-02-30, que JS normaliza a marzo)
+// fecha OPCIONAL al registrar un movimiento: vacia = ahora mismo; una fecha pasada se
+// guarda como 'YYYY-MM-DDT00:00:00Z' (el patron que msFechaMov/fmtFechaMov ya tratan
+// como dia local). El dinero se aplica al saldo de HOY aunque la fecha sea pasada:
+// las cuentas de interes no recalculan rendimiento retroactivo. Devuelve null si la
+// fecha tecleada es invalida o futura (ya aviso con toast). Portada de mi-cartera (5-oct-2026).
+function fechaMovOpcional(inputId) {
+  const el=document.getElementById(inputId);
+  const raw=el?el.value.trim():'';
+  if(!raw) return new Date().toISOString();
+  if(!fechaCalendarioValida(raw)){ showToast('fecha no válida, usa el formato 2026-08-15'); return null; }
+  if(raw>hoyLocal()){ showToast('la fecha no puede ser futura'); return null; }
+  return raw===hoyLocal()?new Date().toISOString():raw+'T00:00:00Z';
+}
+// insercion ordenada por fecha (desc) en la lista en memoria: un movimiento retrofechado
+// no debe quedarse arriba como si fuera el mas reciente. Ambos formatos de fecha son ISO,
+// asi que comparar strings ordena bien; 'creado' desempata movimientos del mismo dia.
+function insertarPorFecha(arr, item) {
+  const k=x=>String(x.fecha||'')+'|'+String(x.creado||'');
+  const idx=arr.findIndex(x=>k(x)<=k(item));
+  if(idx<0) arr.push(item); else arr.splice(idx,0,item);
+}
 function fechaCalendarioValida(f) {
   if(!/^\d{4}-\d{2}-\d{2}$/.test(f)) return false;
   const d=parseFechaLocal(f);
@@ -2510,7 +2540,8 @@ function render() {
   const pct=Math.max(0,Math.min(100,((30-dias)/30)*100));
   document.getElementById('corte-fill').style.width=pct.toFixed(1)+'%';
   if(state.tarjetaMovimientos.length>0) {
-    const ult=state.tarjetaMovimientos[0];
+    // el mas RECIENTE por registro (no [0]: un movimiento retrofechado entra al frente del array)
+    const ult=state.tarjetaMovimientos.reduce((a,b)=>((b.creado||b.fecha||'')>(a.creado||a.fecha||'')?b:a));
     // es textContent: el autor no necesita escape aqui, pero si pasa por la lista blanca
     document.getElementById('tarjeta-ultimo').textContent=(ult.tipo==='cargo'?'+':'-')+fmt(ult.monto)+' · '+fmtFechaMov(ult.fecha,{day:'numeric',month:'short'})+(QUIENES.includes(ult.registradoPor)?(' · '+ult.registradoPor):'');
   }
@@ -2652,7 +2683,8 @@ window.registrarTarjeta = async function(tipo) {
   const m=c2(monto);
   const quien=quienSoy(), ahora=new Date().toISOString();
   // ids y fecha se fijan ANTES del callback: Firestore lo puede reejecutar
-  const plan={tarjetaMovAdd:{id:nuevoId(),tipo,monto:m,nota,registradoPor:quien,fecha:ahora}};
+  const fechaMov=fechaMovOpcional('tarjeta-fecha'); if(fechaMov===null) return;
+  const plan={tarjetaMovAdd:{id:nuevoId(),tipo,monto:m,nota,registradoPor:quien,fecha:fechaMov,creado:ahora}};
   let tr=null, trRef=null;
   if(tipo==='cargo') plan.tarjetaDelta=m;
   else {
@@ -2661,7 +2693,7 @@ window.registrarTarjeta = async function(tipo) {
     if(fuente!=='externo'){
       plan.deltas={[CAMPO_CUENTA[fuente]]:-m};
       trRef=doc(collection(db,C_TRANSF));
-      tr={origen:fuente,destino:'tarjeta',monto:m,nota:nota||'pago credito BBVA',registradoPor:quien,fecha:ahora};
+      tr={origen:fuente,destino:'tarjeta',monto:m,nota:nota||'pago credito BBVA',registradoPor:quien,fecha:fechaMov,creado:ahora};
       plan.crear=[{ref:trRef,data:tr}];
     }
   }
@@ -2674,8 +2706,8 @@ window.registrarTarjeta = async function(tipo) {
   if(res.error){ showToast(res.error); return; }
   // ── post-commit ──
   aplicarRes(res);
-  if(tr){ tr.id=trRef.id; state.transferencias.unshift(tr); }
-  document.getElementById('tarjeta-cargo-monto').value='';
+  if(tr){ tr.id=trRef.id; insertarPorFecha(state.transferencias,tr); }
+  document.getElementById('tarjeta-cargo-monto').value='';document.getElementById('tarjeta-fecha').value='';
   document.getElementById('tarjeta-cargo-nota').value='';
   refrescar(render,renderTransferencias);
   showToast(tipo==='cargo'?'+'+fmt(m)+' a la tarjeta':'pago de '+fmt(m)+' registrado');
@@ -2700,11 +2732,12 @@ window.registrarTransferencia = async function() {
   const m=c2(monto);
   const quien=quienSoy(), ahora=new Date().toISOString();
   const ref=doc(collection(db,C_TRANSF));
-  const tr={origen,destino,monto:m,nota,registradoPor:quien,fecha:ahora};
+  const fechaTr=fechaMovOpcional('transfer-fecha'); if(fechaTr===null) return;
+  const tr={origen,destino,monto:m,nota,registradoPor:quien,fecha:fechaTr,creado:ahora};
   const plan={deltas:{[CAMPO_CUENTA[origen]]:-m}, crear:[{ref,data:tr}]};
   if(destino==='tarjeta'){
     plan.tarjetaDelta=-m;
-    plan.tarjetaMovAdd={id:nuevoId(),tipo:'pago',monto:m,nota:nota||('pago desde '+CUENTAS[origen]),registradoPor:quien,fecha:ahora};
+    plan.tarjetaMovAdd={id:nuevoId(),tipo:'pago',monto:m,nota:nota||('pago desde '+CUENTAS[origen]),registradoPor:quien,fecha:fechaTr,creado:ahora};
   } else {
     plan.deltas[CAMPO_CUENTA[destino]]=m;
   }
@@ -2717,8 +2750,8 @@ window.registrarTransferencia = async function() {
   if(res.error){ showToast(res.error); return; }
   // ── post-commit ──
   aplicarRes(res);
-  tr.id=ref.id; state.transferencias.unshift(tr);
-  document.getElementById('transfer-monto').value='';document.getElementById('transfer-nota').value='';
+  tr.id=ref.id; insertarPorFecha(state.transferencias,tr);
+  document.getElementById('transfer-monto').value='';document.getElementById('transfer-nota').value='';document.getElementById('transfer-fecha').value='';
   refrescar(render,renderTransferencias);
   showToast(fmt(m)+' · '+CUENTAS[origen]+' → '+CUENTAS[destino]);
 };
@@ -2757,7 +2790,7 @@ function renderTransferencias() {
   const c=document.getElementById('transfer-historial');
   if(!state.transferencias.length){c.innerHTML='<div class="empty-state">sin transferencias</div>';return;}
   c.innerHTML=state.transferencias.slice(0,20).map(t=>{
-    const fecha=new Date(t.fecha).toLocaleDateString('es-MX',{day:'numeric',month:'short'});
+    const fecha=fmtFechaMov(t.fecha,{day:'numeric',month:'short'});
     const del=(t.id&&t.destino!=='tarjeta')?`<button class="del-btn" onclick="eliminarTransferencia('${t.id}')">&times;</button>`:'';
     return`<div class="item-row"><div><div class="item-cat">${CUENTAS[t.origen]||t.origen} → ${CUENTAS[t.destino]||t.destino}</div><div class="item-meta">${escapeHtml(t.nota||'')} · ${fecha}${quienTxt(t.registradoPor)}</div></div><div style="display:flex;align-items:center"><div style="font-size:14px;font-weight:600;color:var(--purple)">${fmt(t.monto)}</div>${del}</div></div>`;
   }).join('');
@@ -2780,7 +2813,10 @@ async function altaGasto(cat,monto,nota,fuente,btn,fecha,extra) {
   // dos registros del mismo aviso no pueden ser dos gastos
   const idFijo=(extra&&typeof extra.idFijo==='string'&&/^sus_[a-z0-9]{6,24}_\d{4}-\d{2}$/.test(extra.idFijo))?extra.idFijo:null;
   const ref=idFijo?doc(db,C_GASTOS,idFijo):doc(collection(db,C_GASTOS));
-  const gasto={cat,monto:m,nota,fuente,registradoPor:quienSoy(),fecha:new Date().toISOString()};
+  // fecha = cuando OCURRIO (puede ser retro); creado = cuando se registro. El saldo
+  // se afecta hoy en ambos casos (ver fechaMovOpcional)
+  const creado=new Date().toISOString();
+  const gasto={cat,monto:m,nota,fuente,registradoPor:quienSoy(),fecha:fecha||creado,creado};
   // vinculo con la suscripcion que lo origino: asi 'ya se pago este mes' no se adivina
   if(extra&&typeof extra.suscripcion==='string') gasto.suscripcion=extra.suscripcion.slice(0,24);
   const plan={crear:[{ref,data:gasto}]};
@@ -2796,23 +2832,24 @@ async function altaGasto(cat,monto,nota,fuente,btn,fecha,extra) {
   if(res.error){ showToast(res.error); return false; }
   // ── post-commit: ya quedo guardado; de aquí abajo nada puede decir "no se guardo" ──
   aplicarRes(res);
-  gasto.id=ref.id; state.gastos.unshift(gasto);
+  gasto.id=ref.id; insertarPorFecha(state.gastos,gasto);
   const quedoNegativo=!esTarjeta && res.saldos[CAMPO_CUENTA[fuente]]<0;
   refrescar(render,renderMovimientos);
   showToast(quedoNegativo?('-'+fmt(m)+' registrado · ojo: SALDO quedó negativo'):('-'+fmt(m)+' registrado'));
-  avisoCategoria(cat); // aviso diferido si este mes ya va muy arriba del promedio
+  avisoCategoria(cat,gasto.fecha); // aviso diferido si este mes ya va muy arriba del promedio
   return true;
 }
 window.registrarGasto = async function() {
   if(!montoValido('gasto-monto')) return;
+  const fecha=fechaMovOpcional('gasto-fecha'); if(fecha===null) return;
   const ok=await altaGasto(
     document.getElementById('gasto-cat').value,
     parseFloat(document.getElementById('gasto-monto').value),
     document.getElementById('gasto-nota').value.trim(),
     state.fuenteGasto,
-    document.getElementById('gasto-btn'));
+    document.getElementById('gasto-btn'),fecha);
   if(ok) palomita('gasto-btn');
-  if(ok){ document.getElementById('gasto-monto').value='';document.getElementById('gasto-nota').value=''; }
+  if(ok){ document.getElementById('gasto-monto').value='';document.getElementById('gasto-nota').value='';document.getElementById('gasto-fecha').value=''; }
 };
 
 window.eliminarGasto = async function(id) {
@@ -2911,7 +2948,7 @@ function renderMovimientos() {
   // el filtro por persona se ve aunque no haya resultados, con su forma de quitarlo
   const chip=movQuien===null?'':('<div class="item-meta" style="padding:2px 0 8px">solo lo que registró <b>'+escapeHtml(quienNom(movQuien))+'</b> · <button type="button" class="del-btn qr-quitar" onclick="setMovQuien(\''+movQuien+'\')">quitar filtro</button></div>');
   if(!todos.length){c.innerHTML=chip+'<div class="empty-state">sin '+(movFiltro==='todos'?'movimientos':movFiltro)+' en este periodo</div>';return;}
-  todos.sort((a,b)=>(msFechaMov(b.it.fecha)||0)-(msFechaMov(a.it.fecha)||0));
+  todos.sort((a,b)=>((msFechaMov(b.it.fecha)||0)-(msFechaMov(a.it.fecha)||0))||String(b.it.creado||'').localeCompare(String(a.it.creado||'')));
   const recortado=todos.length>200;
   c.innerHTML=chip+(recortado?'<div class="item-meta" style="text-align:center;padding:6px 0">mostrando los 200 más recientes de '+todos.length+'</div>':'')+
   todos.slice(0,200).map(m=>{
@@ -3031,7 +3068,7 @@ window.guardarEdicionMov = async function() {
 
 // ── INGRESOS ──────────────────────────────────────────────────
 // nucleo compartido (mismo esquema que altaGasto): formulario normal + registro rapido
-async function altaIngreso(cat,monto,nota,destino,btn) {
+async function altaIngreso(cat,monto,nota,destino,btn,fecha) {
   if(!requiereQuien()) return false;
   if(!Number.isFinite(monto)||monto<=0){showToast('ingresa un monto válido');return false;}
   if(!DESTINOS_INGRESO.includes(destino)){showToast('destino no válido');return false;}
@@ -3039,7 +3076,8 @@ async function altaIngreso(cat,monto,nota,destino,btn) {
   const m=c2(monto);
   const ref=doc(collection(db,C_INGRESOS));
   // dePapa queda como constancia de lo que decidió la categoría al registrarlo
-  const ingreso={cat,monto:m,nota,destino,dePapa:catPapa(cat),registradoPor:quienSoy(),fecha:new Date().toISOString()};
+  const creado=new Date().toISOString();
+  const ingreso={cat,monto:m,nota,destino,dePapa:catPapa(cat),registradoPor:quienSoy(),fecha:fecha||creado,creado};
   let res=null,err=null;
   if(btn) btn.disabled=true; dineroOcupado=true;
   try{ res=await txDinero({deltas:{[CAMPO_CUENTA[destino]]:m}, crear:[{ref,data:ingreso}]}); }
@@ -3049,22 +3087,23 @@ async function altaIngreso(cat,monto,nota,destino,btn) {
   if(res.error){ showToast(res.error); return false; }
   // ── post-commit ──
   aplicarRes(res);
-  ingreso.id=ref.id; state.ingresos.unshift(ingreso);
+  ingreso.id=ref.id; insertarPorFecha(state.ingresos,ingreso);
   refrescar(render,renderMovimientos);
   showToast('+'+fmt(m)+' ingresado');
   return true;
 }
 window.registrarIngreso = async function() {
   if(!montoValido('ingreso-monto')) return;
+  const fecha=fechaMovOpcional('ingreso-fecha'); if(fecha===null) return;
   const ok=await altaIngreso(
     document.getElementById('ingreso-cat').value,
     parseFloat(document.getElementById('ingreso-monto').value),
     document.getElementById('ingreso-nota').value.trim(),
     state.destinoIngreso,
-    document.getElementById('ingreso-btn'));
+    document.getElementById('ingreso-btn'),fecha);
   // tras un alta la categoría regresa a "Mes papá": que otra no se quede pegada al siguiente
   if(ok) palomita('ingreso-btn');
-  if(ok){ document.getElementById('ingreso-monto').value='';document.getElementById('ingreso-nota').value=''; document.getElementById('ingreso-cat').value=CAT_PAPA; }
+  if(ok){ document.getElementById('ingreso-monto').value='';document.getElementById('ingreso-nota').value='';document.getElementById('ingreso-fecha').value=''; document.getElementById('ingreso-cat').value=CAT_PAPA; }
 };
 
 window.eliminarIngreso = async function(id) {
@@ -3208,7 +3247,8 @@ window.registrarDeuda = async function() {
   const m=c2(monto);
   // v:2 se mantiene: registradoPor es un campo aditivo y no cambia como se revierte el
   // movimiento (eliminarDeuda sigue exigiendo v===2). El id se genera ANTES del callback
-  const mov={id:nuevoId(),subcat,monto:m,tipo,nota,cuenta,registradoPor:quienSoy(),v:2,fecha:new Date().toISOString()};
+  const fechaMov=fechaMovOpcional('deuda-fecha'); if(fechaMov===null) return;
+  const mov={id:nuevoId(),subcat,monto:m,tipo,nota,cuenta,registradoPor:quienSoy(),v:2,fecha:fechaMov,creado:new Date().toISOString()};
   const plan={persona:{key:persona, deltaSaldo:ef.deuda*m, movAdd:mov}};
   if(cuenta!=='externo'&&CAMPO_CUENTA[cuenta]) plan.deltas={[CAMPO_CUENTA[cuenta]]:ef.cuenta*m};
   let res=null,err=null;
@@ -3221,7 +3261,7 @@ window.registrarDeuda = async function() {
   // ── post-commit ──
   aplicarRes(res);
   state.personas[persona]=res.persona; // saldo y movimientos canonicos de esa persona
-  document.getElementById('deuda-monto').value='';document.getElementById('deuda-nota').value='';
+  document.getElementById('deuda-monto').value='';document.getElementById('deuda-nota').value='';document.getElementById('deuda-fecha').value='';
   // el saldo de la persona afecta el patrimonio neto aunque la cuenta sea externo
   refrescar(renderDeudas,render);
   showToast('movimiento registrado');
@@ -3235,7 +3275,7 @@ function renderDeudas() {
   document.getElementById('deuda-grand-sub').textContent=gt>=0?'te deben en total':'debes en total';
   document.getElementById('personas-container').innerHTML=Object.entries(personas).map(([key,p])=>{
     const isPos=p.saldo>=0;
-    const movs=p.movimientos.map(m=>{
+    const movs=p.movimientos.slice().sort((a,b)=>(String(b.fecha||'')+'|'+String(b.creado||'')).localeCompare(String(a.fecha||'')+'|'+String(a.creado||''))).map(m=>{
       const fecha=fmtFechaMov(m.fecha,{day:'numeric',month:'short',year:'numeric'});
       const isNeg=(DEUDA_TIPOS[m.tipo]||{deuda:-1}).deuda<0;
       // movimientos nuevos traen cuenta; los viejos no la tienen (dato legado, se distingue de 'externo')
@@ -4109,7 +4149,10 @@ window.eliminarApartado = async function(id) {
 
 // aviso SIN tope: solo avisa si el mes actual ya supera claramente el promedio historico
 let avisoCatTimer=null;
-function avisoCategoria(cat) {
+function avisoCategoria(cat,fechaMov) {
+  // solo tiene sentido para gastos del mes EN CURSO: un gasto retrofechado a otro mes
+  // dispararia una alerta sobre un mes que ya paso
+  if(fechaMov&&mesLocalDe(fechaMov)!==hoyLocal().slice(0,7)) return;
   const mesKey=hoyLocal().slice(0,7);
   const totalMes=state.gastos.filter(g=>g.cat===cat&&mesLocalDe(g.fecha)===mesKey).reduce((s,g)=>s+g.monto,0);
   const hoy=new Date(); const claves=[];
