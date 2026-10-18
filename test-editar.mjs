@@ -198,12 +198,15 @@ console.log('\nSnapshots que llegan con el candado de dinero puesto: se encolan 
 {
   const cb = {}; const llamadas = []; let cargados = true;
   const nuevaPantalla = () => new Function('db', 'doc', 'onSnapshot', 'NS', 'state', 'refrescar', 'render', 'renderDeudas', 'renderPersonaSelect', 'aplicarAportes', 'renderPapa', 'renderAporte', 'setSyncDot', 'datosCargados',
-    tomar('let unsubs=[];', '// un movimiento del atajo que NO llego') + '\n' + funcion('liberarDinero') +
+    // (16-oct-2026) liberarDinero ahora cuenta las operaciones terminadas (genDinero, que en la app vive
+    // junto a dineroOcupado, fuera de este tramo): se declara aqui para que la funcion real corra igual
+    tomar('let unsubs=[];', '// un movimiento del atajo que NO llego') + '\nlet genDinero = 0;\n' + funcion('liberarDinero') +
     '\nsuscribirEnVivo();\nreturn { liberar: liberarDinero, ocupar: () => { dineroOcupado = true; }, estaOcupado: () => dineroOcupado, pendientes: () => snapsPendientes.size };')
     .call(null, {}, (db, ...p) => ({ path: p.join('/'), id: p[p.length - 1] }), (ref, fn) => { cb[ref.path] = fn; return () => {}; }, NS, st2, (...f) => llamadas.push('pinta'), () => {}, () => {}, () => {}, () => {}, () => {}, () => {}, () => {}, cargados);
   const st2 = { efectivo: 100, nuSaldo: 50, tarjetaDeuda: 0, tarjetaMovimientos: [], personas: {} };
   // (st2 se usa por referencia: se declara antes de invocar nuevaPantalla)
-  const snap = d => ({ exists: () => d !== undefined, data: () => d });
+  // metadata como en Firestore real: el snapshot en vivo solo pone el punto verde si NO viene de la cache
+  const snap = d => ({ exists: () => d !== undefined, data: () => d, metadata: { fromCache: false } });
   // el codigo ejecutable viene del mismo bloque: dineroOcupado y snapsPendientes viven dentro del Function
   const p = nuevaPantalla();
   p.ocupar();
