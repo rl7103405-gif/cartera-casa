@@ -190,7 +190,7 @@ const iG = HTML.indexOf('window.guardarEdicionMov = async function'), cuerpoG = 
 chk('16f guardarEdicionMov arma datos sin undefined y exige cuenta si hay efecto', /if\(cuenta\) datos\[campo\]=cuenta/.test(cuerpoG) && !/const datos=\{[^}]*\[campo\]:cuenta/.test(cuerpoG) && /if\(!cuenta && !movSinEfecto\(it\)\)\{ showToast\(/.test(cuerpoG));
 const iE = HTML.indexOf('window.editarMovimiento = function'), cuerpoE = HTML.slice(iE, HTML.indexOf('\n};', iE));
 chk('16g editarMovimiento no agrega pastilla para una cuenta ausente', /if \(it\[campo\] && !opciones\.includes\(it\[campo\]\)\) opciones\.unshift/.test(cuerpoE) && /sin cuenta registrada/.test(cuerpoE));
-const textoEfecto = new Function('CUENTAS', 'fmt', 'c2', 'Object', funcion('textoEfectoEdit') + '\nreturn textoEfectoEdit;')(CUENTAS, n => '$' + n, n => Math.round(n * 100) / 100, Object);
+const textoEfecto = new Function('CUENTAS', 'fmt', 'c2', 'Object', 'nombreCuenta', funcion('textoEfectoEdit') + '\nreturn textoEfectoEdit;')(CUENTAS, n => '$' + n, n => Math.round(n * 100) / 100, Object, k => CUENTAS[k] || '');
 const t1 = textoEfecto('gasto', undefined, 100, 'efectivo', 150), t2 = textoEfecto('ingreso', undefined, 100, 'nu', 150), t3 = textoEfecto('gasto', undefined, 100, 'tarjeta', 150);
 chk('16h el texto del efecto sin cuenta original no dice undefined', !/undefined|null/.test(t1 + t2 + t3) && /saca \$150/.test(t1) && /suma \$150/.test(t2) && /sube \$150/.test(t3), [t1, t2, t3].join(' | '));
 
@@ -198,11 +198,14 @@ console.log('\nSnapshots que llegan con el candado de dinero puesto: se encolan 
 {
   const cb = {}; const llamadas = []; let cargados = true;
   const nuevaPantalla = () => new Function('db', 'doc', 'onSnapshot', 'NS', 'state', 'refrescar', 'render', 'renderDeudas', 'renderPersonaSelect', 'aplicarAportes', 'renderPapa', 'renderAporte', 'setSyncDot', 'datosCargados',
+    // (20-oct-2026) cuentas en otra moneda: suscribirEnVivo tambien escucha casa/cuentasX
+    'docCX', 'saneaCX', 'renderCuentasX', 'pintarFuentesX',
     // (16-oct-2026) liberarDinero ahora cuenta las operaciones terminadas (genDinero, que en la app vive
     // junto a dineroOcupado, fuera de este tramo): se declara aqui para que la funcion real corra igual
     tomar('let unsubs=[];', '// un movimiento del atajo que NO llego') + '\nlet genDinero = 0;\n' + funcion('liberarDinero') +
     '\nsuscribirEnVivo();\nreturn { liberar: liberarDinero, ocupar: () => { dineroOcupado = true; }, estaOcupado: () => dineroOcupado, pendientes: () => snapsPendientes.size };')
-    .call(null, {}, (db, ...p) => ({ path: p.join('/'), id: p[p.length - 1] }), (ref, fn) => { cb[ref.path] = fn; return () => {}; }, NS, st2, (...f) => llamadas.push('pinta'), () => {}, () => {}, () => {}, () => {}, () => {}, () => {}, () => {}, cargados);
+    .call(null, {}, (db, ...p) => ({ path: p.join('/'), id: p[p.length - 1] }), (ref, fn) => { cb[ref.path] = fn; return () => {}; }, NS, st2, (...f) => llamadas.push('pinta'), () => {}, () => {}, () => {}, () => {}, () => {}, () => {}, () => {}, cargados,
+      () => ({ path: NS + '/cuentasX' }), d => d || {}, () => {}, () => {});
   const st2 = { efectivo: 100, nuSaldo: 50, tarjetaDeuda: 0, tarjetaMovimientos: [], personas: {} };
   // (st2 se usa por referencia: se declara antes de invocar nuevaPantalla)
   // metadata como en Firestore real: el snapshot en vivo solo pone el punto verde si NO viene de la cache

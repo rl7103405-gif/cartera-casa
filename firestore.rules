@@ -86,19 +86,74 @@ service cloud.firestore {
     // Documentos de configuracion y estado:
     // saldos, mercado, personas, perfil, tarjeta, tarjetaRev,
     // historial, apartados, categorias, posiciones
+
+    // ---------------------------------------------------------------
+    //  (20-oct-2026) CUENTAS EN OTRA MONEDA (doc <ns>/cuentasX).
+    //  Un gasto, ingreso o transferencia que toca una cuenta x_ solo se
+    //  puede CREAR o BORRAR si esa misma operacion cambia <ns>/cuentasX
+    //  (el dinero entra o regresa a su cuenta), y no se le puede cambiar
+    //  monto, moneda ni cuenta. Asi una version vieja de la app, que no
+    //  conoce cuentasX, no puede borrarlo sin devolver el dinero.
+    //  Los movimientos de siempre (sin x_) no cambian en nada.
+    // ---------------------------------------------------------------
+    function esX(v) {
+      return v is string && v.matches('x_[a-z0-9]{6,16}');
+    }
+    function tocaX(d) {
+      return esX(d.get('fuente', '')) || esX(d.get('destino', '')) || esX(d.get('origen', ''));
+    }
+    // el saldo de UNA cuenta exacta antes/despues de la operacion: renombrar u otra cuenta no cuenta
+    function saldoCX(s, id) {
+      return s.data.get('cuentas', {}).get(id, {}).get('saldo', null);
+    }
+    function cxMueve(ns, id) {
+      return saldoCX(getAfter(/databases/$(database)/documents/$(ns)/cuentasX), id)
+          != saldoCX(get(/databases/$(database)/documents/$(ns)/cuentasX), id);
+    }
+    // cada lado x_ del movimiento (fuente, destino u origen; una transferencia x_ -> x_ tiene dos)
+    // debe haber movido SU saldo. Un lado que no es x_ no se exige aqui
+    function ladoMueve(ns, d, campo) {
+      return !esX(d.get(campo, '')) || cxMueve(ns, d.get(campo, ''));
+    }
+    function movidoX(ns, d) {
+      return ladoMueve(ns, d, 'fuente') && ladoMueve(ns, d, 'destino') && ladoMueve(ns, d, 'origen');
+    }
+    function igualX(campo) {
+      return request.resource.data.get(campo, null) == resource.data.get(campo, null);
+    }
+    function creaX(ns) { return !tocaX(request.resource.data) || movidoX(ns, request.resource.data); }
+    function borraX(ns) { return !tocaX(resource.data) || movidoX(ns, resource.data); }
+    function editaX() {
+      return (!tocaX(resource.data) && !tocaX(request.resource.data))
+          || (igualX('monto') && igualX('montoOrig') && igualX('moneda') && igualX('tc')
+              && igualX('fuente') && igualX('destino') && igualX('origen')
+              && igualX('montoOrigen') && igualX('montoDestino')
+              && igualX('monedaOrigen') && igualX('monedaDestino') && igualX('tcFecha')
+              && igualX('pendiente') && igualX('aplicadoSaldo') && igualX('porAtajo'));
+    }
+
     match /cartera/{documento=**} {
       allow read, write: if esRoberto();
     }
 
     // Colecciones de movimientos (sin prefijo, historicas)
     match /gastos/{documento=**} {
-      allow read, write: if esRoberto();
+      allow read: if esRoberto();
+      allow create: if esRoberto() && creaX('cartera');
+      allow update: if esRoberto() && editaX();
+      allow delete: if esRoberto() && borraX('cartera');
     }
     match /ingresos/{documento=**} {
-      allow read, write: if esRoberto();
+      allow read: if esRoberto();
+      allow create: if esRoberto() && creaX('cartera');
+      allow update: if esRoberto() && editaX();
+      allow delete: if esRoberto() && borraX('cartera');
     }
     match /transferencias/{documento=**} {
-      allow read, write: if esRoberto();
+      allow read: if esRoberto();
+      allow create: if esRoberto() && creaX('cartera');
+      allow update: if esRoberto() && editaX();
+      allow delete: if esRoberto() && borraX('cartera');
     }
     match /stocksOps/{documento=**} {
       allow read, write: if esRoberto();
@@ -120,13 +175,22 @@ service cloud.firestore {
     }
 
     match /zoe_gastos/{documento=**} {
-      allow read, write: if esZoe();
+      allow read: if esZoe();
+      allow create: if esZoe() && creaX('zoe');
+      allow update: if esZoe() && editaX();
+      allow delete: if esZoe() && borraX('zoe');
     }
     match /zoe_ingresos/{documento=**} {
-      allow read, write: if esZoe();
+      allow read: if esZoe();
+      allow create: if esZoe() && creaX('zoe');
+      allow update: if esZoe() && editaX();
+      allow delete: if esZoe() && borraX('zoe');
     }
     match /zoe_transferencias/{documento=**} {
-      allow read, write: if esZoe();
+      allow read: if esZoe();
+      allow create: if esZoe() && creaX('zoe');
+      allow update: if esZoe() && editaX();
+      allow delete: if esZoe() && borraX('zoe');
     }
     match /zoe_stocksOps/{documento=**} {
       allow read, write: if esZoe();
@@ -150,13 +214,22 @@ service cloud.firestore {
 
     // Colecciones de movimientos en uso
     match /casa_gastos/{documento=**} {
-      allow read, write: if esCasa();
+      allow read: if esCasa();
+      allow create: if esCasa() && creaX('casa');
+      allow update: if esCasa() && editaX();
+      allow delete: if esCasa() && borraX('casa');
     }
     match /casa_ingresos/{documento=**} {
-      allow read, write: if esCasa();
+      allow read: if esCasa();
+      allow create: if esCasa() && creaX('casa');
+      allow update: if esCasa() && editaX();
+      allow delete: if esCasa() && borraX('casa');
     }
     match /casa_transferencias/{documento=**} {
-      allow read, write: if esCasa();
+      allow read: if esCasa();
+      allow create: if esCasa() && creaX('casa');
+      allow update: if esCasa() && editaX();
+      allow delete: if esCasa() && borraX('casa');
     }
     // rastro de quien ajusto saldos a mano (escritura destructiva auditada)
     match /casa_ajustes/{documento=**} {
@@ -188,13 +261,22 @@ service cloud.firestore {
       allow read, write: if esTono();
     }
     match /tono_gastos/{documento=**} {
-      allow read, write: if esTono();
+      allow read: if esTono();
+      allow create: if esTono() && creaX('tono');
+      allow update: if esTono() && editaX();
+      allow delete: if esTono() && borraX('tono');
     }
     match /tono_ingresos/{documento=**} {
-      allow read, write: if esTono();
+      allow read: if esTono();
+      allow create: if esTono() && creaX('tono');
+      allow update: if esTono() && editaX();
+      allow delete: if esTono() && borraX('tono');
     }
     match /tono_transferencias/{documento=**} {
-      allow read, write: if esTono();
+      allow read: if esTono();
+      allow create: if esTono() && creaX('tono');
+      allow update: if esTono() && editaX();
+      allow delete: if esTono() && borraX('tono');
     }
     match /tono_stocksOps/{documento=**} {
       allow read, write: if esTono();
@@ -215,13 +297,22 @@ service cloud.firestore {
       allow read, write: if esEli();
     }
     match /eli_gastos/{documento=**} {
-      allow read, write: if esEli();
+      allow read: if esEli();
+      allow create: if esEli() && creaX('eli');
+      allow update: if esEli() && editaX();
+      allow delete: if esEli() && borraX('eli');
     }
     match /eli_ingresos/{documento=**} {
-      allow read, write: if esEli();
+      allow read: if esEli();
+      allow create: if esEli() && creaX('eli');
+      allow update: if esEli() && editaX();
+      allow delete: if esEli() && borraX('eli');
     }
     match /eli_transferencias/{documento=**} {
-      allow read, write: if esEli();
+      allow read: if esEli();
+      allow create: if esEli() && creaX('eli');
+      allow update: if esEli() && editaX();
+      allow delete: if esEli() && borraX('eli');
     }
     match /eli_stocksOps/{documento=**} {
       allow read, write: if esEli();
