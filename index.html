@@ -5967,7 +5967,8 @@ function calcularCierre(start,end,modo) {
 // Mide SOLO lo que la app observa con fiabilidad: lo que sobra del ingreso,
 // control de gasto, constancia y colchon. Los componentes sin datos se excluyen y se
 // renormaliza, informando cuales quedaron fuera.
-const SCORE_VER='1.0';
+// 1.1 (28-oct-2026, Roberto): constancia completa con 3 meses seguidos (antes 6), igual en las cinco carteras
+const SCORE_VER='1.1';
 // por que un mes NO cuenta como bueno, en una frase — para que 0/20 diga que arreglar
 function porQueNoConto(m) {
   if(m.gPct===null) return 'no hay ingresos registrados';
@@ -5997,8 +5998,8 @@ function calcScore(m) {
       detalle:'gastaron el '+m.gPct.toFixed(0)+'% de sus ingresos · su referencia es no pasar de '+est.gastoMax+'%'});
   } else excluidos.push('control de gasto (sin ingresos registrados)');
   // 3) constancia (20): meses buenos seguidos, tope a 6 para no premiar eternamente lo mismo
-  comps.push({nombre:'constancia',max:20,puntos:Math.round(20*Math.min(1,m.racha/6)),
-    detalle:(m.racha>=1?('llevan '+(m.racha>=24?'24 o más':m.racha)+' mes(es) seguidos cerrando bien'):('este mes no contó: '+porQueNoConto(m)))
+  comps.push({nombre:'constancia',max:20,puntos:Math.round(20*Math.min(1,m.racha/3)),
+    detalle:(m.racha>=1?('llevan '+(m.racha>=24?'24 o más':m.racha)+' mes(es) seguidos cerrando bien'+(m.racha<3?' · los 20 puntos son con 3 meses: les faltan '+(3-m.racha):'')):('este mes no contó: '+porQueNoConto(m)))
       +' · se recalcula con la referencia actual, así que cambia si editan el perfil del hogar'});
   // 4) colchon (10): meses de gasto cubiertos por dinero DISPONIBLE de la casa
   // (debito BBVA + efectivo, sin lo que les deben) contra el objetivo del estandar
