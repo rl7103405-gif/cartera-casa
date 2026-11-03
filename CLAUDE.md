@@ -81,10 +81,10 @@ Ver `README.md` para el paso a paso completo.
   pasa al siguiente. Lo hace `cuentaPapa()`, en centavos, con TODOS los ingresos válidos del mes,
   porque hoy papá es la única fuente de dinero de la casa. Si se edita o borra un ingreso, se
   corrige solo, y tres teléfonos no pueden duplicarlo.
-- **Deudas:** tarjeta derivada de solo lectura (`renderPapaDeuda`, en `#papa-deuda`). **No entra al
-  balance total.**
+- **Deudas:** tarjeta derivada de solo lectura (`renderPapaDeuda`, en `#papa-deuda`): su monto y una liga a la
+  pestaña papá. **No entra al balance total.**
 - **Limitación aceptada:** los ingresos no se sincronizan en vivo entre teléfonos (límite de
-  lecturas). La tarjeta pide recargar.
+  lecturas). La pestaña papá los relee al abrirla (máximo una vez por minuto) y con su botón "actualizar".
 - **Solo cuenta el dinero de papá = categoría «Mes papá»** (`CAT_PAPA`, `catPapa`). Es la ÚNICA categoría
   de ingreso por omisión. `esDePapa`: la categoría es «Mes papá», o `dePapa===true`, o el ingreso no
   trae el campo (los anteriores al 30/09 cuentan como antes). El alta guarda `dePapa=catPapa(cat)`. El
@@ -98,6 +98,19 @@ Ver `README.md` para el paso a paso completo.
   conserva al cambiar de periodo. Las claves salen de `QUIENES`, nunca del dato. Clases `.qr-*`:
   `.quien-bar` ya existía y chocaban.
 - **Pruebas:** `node test-papa.mjs`, 23 casos contra las funciones reales del `index.html`.
+
+## Pestaña papá (3-nov-2026, publicada)
+
+- **Solo lectura.** Segunda en la barra (`#page-papa`, `renderPestanaPapa`). No guarda nada nuevo ni mueve un peso: sale de `casa/metas` y de los ingresos de papá. Sin `setDoc`, `runTransaction` ni `txDinero`; el botón de depósito lleva a la forma de ingresos de siempre. La segunda tanda del plan (notas y ajustes por mes) no está hecha. Plan: `Desktop\CARTERA\documentos\plan-de-codeo\plan-casa-pestana-papa-2026-11-02.md`.
+- **`libroPapa()` y `depositosPapa()`** viven junto a `cuentaPapa`, dentro del tramo que extraen las pruebas (entre `const RE_MES=` y `const txtDepositos=`). `cuentaPapa` no se toca. Reglas: el dinero cubre primero el mes más viejo sin cubrir, cada depósito conserva su fecha, y el total es el mismo de `cuentaPapa`/`estadoPapa`: `debe` = atraso, `aFavor` = `deMas`, `debe + mes.falta` = `pendiente`. Lo de antes del mes de inicio o con fecha de un mes futuro no entra. El mes en curso nunca cuenta como deuda.
+- **"Actualizar" (`releerIngresosPapa`) nunca pisa una operación de dinero:** con `dineroOcupado` se encola en `snapsPendientes` para volver a leer al soltar (no se guarda lo leído: sería de antes de la operación), y si `genDinero` cambió mientras leía, tira lo leído y repite. Con la copia local no aparenta estar al día. **No llama a `render()`**, que puede guardar la foto del día: repinta con `repintarTrasIngresos`.
+- **"Actualizar" relee solo los ingresos**, así que el resumen puede quedar con ingresos frescos y gastos viejos hasta recargar la app. Aceptado así; no se cambia. La lectura tiene plazo de 15 s (si vence, no toca nada y la lectura tardía se tira); con la carga de la copia local y señal, "actualizar" reintenta la carga completa (`window.reintentarSync()`).
+- **Sin cifra de la familia en el código:** `APORTE_MENSUAL_DEFAULT` es `null`. El monto que se enseña sale de `montoVigente()` (cuota vigente del historial; si no hay historial, `aporteMensual`; si no hay nada, `null`). Sin ninguno de los dos, Inicio dice "no hay un monto acordado" y Perfil deja el campo vacío.
+- **"Cuánto debe" no es dinero que ya se tiene:** no entra a `total-display`, patrimonio neto, balance de deudas, foto diaria ni exportaciones.
+- **Sin señal:** con la carga completa desde la copia dice "sin confirmar". Si la copia no alcanzó (`datosCargados` falso: `pintarDesdeCache` no trae `casa/metas`) dice que falta señal, sin cifras. Lo que espera en la bandeja no cuenta; `depositosEnBandeja` dice cuántos.
+- **Modo privado:** montos por `fmt`/`fmtMov`, ninguno en `title` ni `aria-label`, y las notas no se enseñan porque pueden traer cifras. La barra del mes sí deja ver la proporción, igual que en Inicio.
+- **Depósito recién confirmado (3-nov, ciclo 1):** una lectura lanzada justo después de soltar el candado puede volver sin él y `genDinero`/`dineroOcupado` no la detienen. `ingresosRecientes` (id -> hora y el mismo objeto de `state.ingresos`) recuerda 2 min lo que ESTA sesión confirmó (`altaIngreso`, `altaMovX`, bandeja); `releerIngresosPapa` lo conserva (`ingresosConRecientes`), no marca `ingresosLeidosEn` y pone `ingresosPorRelear` para que abrir la pestaña relea. Borrar con la app o descubrir que ya no existe lo olvida; pasada la ventana manda el servidor. No hay escrituras nuevas. `loadFromFirebase` y `pintarDesdeCache` NO tienen esta defensa (pendiente).
+- **Pruebas:** `node test-libro-papa.mjs` (57 unitarias y 3000 escenarios al azar contra `cuentaPapa` y `estadoPapa`); punta a punta en `Desktop\CARTERA\pruebas-sin-senal\casa\papa\` (ver su `LEEME`).
 
 ## Deudas con tarjeta (16/10/2026)
 
