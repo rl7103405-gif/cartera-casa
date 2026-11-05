@@ -1,4 +1,4 @@
-const CACHE = 'mc-casa-v4'; // arranque instantaneo (stale-while-revalidate + SDK precacheado)
+const CACHE = 'mc-casa-v5'; // arranque instantaneo (stale-while-revalidate + SDK precacheado)
 // El HTML y el SDK de Firebase se precachean: sin esto, en el telefono cada apertura
 // esperaba a bajar ~94KB de HTML MAS los 3 modulos de gstatic antes de pintar nada.
 const SDK = [
