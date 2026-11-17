@@ -10,13 +10,13 @@ precargados.
 - **Firebase Firestore** (sincronización) y **Firebase Authentication** (email/password).
 - Se publica tal cual en GitHub Pages.
 - Archivos: `index.html`, `manifest.json`, `sw.js`, `icon-192.png`, `icon-512.png`,
-  `firestore.rules`.
+  `firestore.rules` (el ÚNICO ruleset del proyecto `mi-cartera-b43e0`, para las cinco carteras; se despliega solo desde aquí).
 
 ## Antes de usarla: 3 cosas que hay que personalizar
 
 1. `index.html` → `firebaseConfig`: los 6 valores del proyecto de Firebase propio.
 2. `index.html` → `ALLOWED_EMAIL`: el correo que puede entrar.
-3. `firestore.rules` → el mismo correo, y publicar las reglas en Firebase.
+3. `firestore.rules` → Cada cuenta se identifica por su uid Y su correo (`soy(uid, correo)` en `cartera-casa\firestore.rules`, y los mismos pares en `PERMITIDOS` de `funciones\functions\index.js`). Una cuenta nueva o recreada: su uid sale de Authentication en la consola y se agrega en los DOS archivos antes de que entre; si no, queda fuera. Las pruebas de emulador usan una copia sin la línea del uid (`pruebas-sin-senal\reglas-emulador.mjs`) y `reglas-uid.mjs` prueba el archivo real (17-nov-2026, auditoría H1).
 
 Ver `README.md` para el paso a paso completo.
 
@@ -63,7 +63,7 @@ Ver `README.md` para el paso a paso completo.
 1. **Un solo commit por tanda de cambios** — GitHub Pages atasca su cola de deploys si se
    suben varios commits seguidos.
 2. Si cambias `sw.js`, **sube también la versión de `CACHE`** para invalidar el caché viejo.
-3. `ALLOWED_EMAIL` es solo un gate de UI: la seguridad real está en `firestore.rules`.
+3. `ALLOWED_EMAIL` es solo un gate de UI: la seguridad real está en `firestore.rules` (uid y correo de cada cuenta).
 4. Validar siempre lo que viene de Firestore (`Number.isFinite`, arrays, regex) — un dato
    corrupto no debe romper la app ni propagar `NaN` a los saldos.
 5. Escapar con `escapeHtml()` cualquier texto del usuario que se interpole en HTML.
