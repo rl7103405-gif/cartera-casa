@@ -36,6 +36,8 @@ rules_version = '2';
 //  4. NO se exige email_verified a proposito: la cuenta de la casa se crea
 //     a mano en la consola de Firebase y nunca pasa por verificacion.
 //     Exigirlo dejaria a los tres hermanos fuera de su propia app.
+//     Lo que sostiene la identidad es el uid (ver "Identidad", abajo) y
+//     el registro cerrado en Authentication (disabledUserSignup).
 //     El correo es un alias (+casa) del Gmail de Roberto, o sea que el
 //     dominio lo controla el; NO usar dominios ajenos aqui.
 //
@@ -49,34 +51,32 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ---------------------------------------------------------------
-    //  Identidad — un correo exacto por app.
-    //  request.auth != null bloquea anonimos y no autenticados.
-    //  La comparacion exacta bloquea cualquier otro correo del proyecto.
+    //  Identidad — una CUENTA exacta por app: su uid Y su correo.
+    //  (17-nov-2026, auditoria del 16-nov, H1) Antes solo se comparaba el
+    //  correo, y nadie lo tiene verificado: si una cuenta se borraba o
+    //  cambiaba de correo, otra cuenta con ese correo heredaba la cartera.
+    //  El uid no se puede elegir ni heredar. Se pide tambien el correo
+    //  para que cambiar el correo de una cuenta la deje fuera (falla
+    //  cerrado) en vez de seguir entrando con otro.
+    //  Para una cuenta NUEVA o recreada: su uid sale de Authentication
+    //  en la consola. Los mismos pares van en PERMITIDOS de
+    //  funciones\functions\index.js.
+    //  PRUEBAS: tanda-completa.sh quita la linea del uid en las copias de
+    //  los emuladores (sus usuarios tienen uid al azar) y falla si no la
+    //  encuentra; la revision del uid la prueba reglas-uid.mjs contra
+    //  ESTE archivo.
     // ---------------------------------------------------------------
-    function esRoberto() {
+    function soy(uid, correo) {
       return request.auth != null
-        && request.auth.token.email == 'rl7103405@gmail.com';
+        && request.auth.uid == uid
+        && request.auth.token.email == correo;
     }
 
-    function esZoe() {
-      return request.auth != null
-        && request.auth.token.email == 'zoe.frei@outlook.de';
-    }
-
-    function esTono() {
-      return request.auth != null
-        && request.auth.token.email == 'tono32sa@gmail.com';
-    }
-
-    function esEli() {
-      return request.auth != null
-        && request.auth.token.email == 'elilinaresa@gmail.com';
-    }
-
-    function esCasa() {
-      return request.auth != null
-        && request.auth.token.email == 'rl7103405+casa@gmail.com';
-    }
+    function esRoberto() { return soy('bafQTqrYdmhSYpPaRx3GfYyfuCj2', 'rl7103405@gmail.com'); }
+    function esZoe()     { return soy('TkKaiJtnpnan9UsGaVkJrXrW6iD3', 'zoe.frei@outlook.de'); }
+    function esTono()    { return soy('FFV9iXKF30VobBhI0NjWVwIFJaC2', 'tono32sa@gmail.com'); }
+    function esEli()     { return soy('iZP9LakWUVQlJxIebprCbvusykP2', 'elilinaresa@gmail.com'); }
+    function esCasa()    { return soy('ce2NbN5Tm4Q8j5ucy29hUYI8gCD3', 'rl7103405+casa@gmail.com'); }
 
 
     // ===============================================================
